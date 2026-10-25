@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -24,7 +24,7 @@
       --danger: #ef4444;
       --radius: 14px;
       --radius-sm: 10px;
-      --empty-hint: "开始对话吧。支持粘贴文本、上传文件，Enter 发送。";
+      --empty-hint: "Start chatting. Paste text, upload files, or test function tools. Press Enter to send.";
     }
 
     * { box-sizing: border-box; }
@@ -435,68 +435,78 @@
     <header class="panel topbar">
       <div class="brand">
         <b>Qwen2API Chat</b>
-        <span id="brandSub">轻量 · 流式 · 支持附件</span>
+        <span id="brandSub">Light · Streaming · Attachments · Tools</span>
       </div>
       <div class="controls">
-        <button id="langToggle" class="btn" type="button" aria-label="Language">EN</button>
-        <input id="apiKey" class="grow" type="text" placeholder="API Key（可选）" autocomplete="off" spellcheck="false" />
+        <button id="langToggle" class="btn" type="button" aria-label="Language" style="display: none;">EN</button>
+        <input id="apiKey" class="grow" type="text" placeholder="API key (optional)" autocomplete="off" spellcheck="false" />
         <select id="model" class="grow"><option value="qwen3.5-plus">qwen3.5-plus</option></select>
-        <button id="refreshModels" class="btn" type="button">刷新模型</button>
-        <button id="logToggle" class="log-toggle" type="button">显示日志</button>
-        <button id="settingsBtn" class="btn" type="button">设置</button>
+        <button id="refreshModels" class="btn" type="button">Refresh models</button>
+        <button id="logToggle" class="log-toggle" type="button">Show logs</button>
+        <button id="settingsBtn" class="btn" type="button">Settings</button>
       </div>
     </header>
 
-    <section class="panel video-panel" aria-label="视频分析">
+    <section class="panel video-panel" aria-label="Video analysis">
       <div class="video-row">
-        <span class="video-tag" id="videoTag">视频分析（可选）</span>
-        <input id="videoUrl" type="text" placeholder="粘贴视频链接；发送时自动进入视频分析；留空则普通对话" autocomplete="off" spellcheck="false" />
-        <button id="clearVideo" class="video-clear" type="button">清空</button>
+        <span class="video-tag" id="videoTag">Video analysis (optional)</span>
+        <input id="videoUrl" type="text" placeholder="Paste a video URL; sending will trigger video analysis; leave empty for normal chat" autocomplete="off" spellcheck="false" />
+        <button id="clearVideo" class="video-clear" type="button">Clear</button>
       </div>
     </section>
 
-    <section class="panel video-panel" aria-label="图片生成">
+    <section class="panel video-panel" aria-label="Mode and Tools">
       <div class="video-row">
         <select id="imageGenMode" style="flex: 0 0 auto; min-width: 120px;">
-          <option value="chat">聊天模式</option>
-          <option value="image">图片生成</option>
+          <option value="chat">Chat Mode</option>
+          <option value="image">Image Generation</option>
         </select>
         <select id="imageSize" style="flex: 0 0 auto; min-width: 120px;">
-          <option value="1:1">1:1 (正方形)</option>
-          <option value="16:9">16:9 (宽屏)</option>
-          <option value="9:16">9:16 (竖屏)</option>
-          <option value="4:3">4:3 (传统)</option>
-          <option value="3:4">3:4 (传统竖)</option>
+          <option value="1:1">1:1 (Square)</option>
+          <option value="16:9">16:9 (Widescreen)</option>
+          <option value="9:16">9:16 (Portrait)</option>
+          <option value="4:3">4:3 (Standard)</option>
+          <option value="3:4">3:4 (Vertical)</option>
         </select>
         <select id="imageCount" style="flex: 0 0 auto; min-width: 80px;">
-          <option value="1">1张</option>
-          <option value="2">2张</option>
-          <option value="3">3张</option>
-          <option value="4">4张</option>
-          <option value="5">5张</option>
+          <option value="1">1 Image</option>
+          <option value="2">2 Images</option>
+          <option value="3">3 Images</option>
+          <option value="4">4 Images</option>
+          <option value="5">5 Images</option>
         </select>
+        <span class="video-tag">Tool Choice</span>
+        <select id="toolChoice" style="flex: 0 0 auto; min-width: 110px;">
+          <option value="none">Disabled</option>
+          <option value="auto">Auto</option>
+          <option value="required">Required</option>
+        </select>
+        <button id="loadSampleTools" class="mini" type="button">Load Sample Tool</button>
+      </div>
+      <div id="toolsConfigRow" style="display: none; margin-top: 8px;">
+        <textarea id="toolsJson" style="min-height: 76px; font-family: ui-monospace, monospace; font-size: 12px;" placeholder='[{"type":"function","function":{"name":"get_weather","description":"Get current weather for a city","parameters":{"type":"object","properties":{"city":{"type":"string"},"unit":{"type":"string","enum":["celsius","fahrenheit"]}},"required":["city"]}}}]'></textarea>
       </div>
     </section>
 
     <div class="shell" id="shell">
-      <section id="messages" class="panel" aria-label="消息列表"></section>
+      <section id="messages" class="panel" aria-label="Messages"></section>
 
-      <aside class="panel log-panel" id="logPanel" aria-label="运行日志">
+      <aside class="panel log-panel" id="logPanel" aria-label="Runtime logs">
         <div class="log-header">
-          <span id="logsTitle">运行日志</span>
-          <button id="clearLogs" type="button" class="mini">清空</button>
+          <span id="logsTitle">Runtime logs</span>
+          <button id="clearLogs" type="button" class="mini">Clear</button>
         </div>
         <div id="logs"></div>
       </aside>
     </div>
 
-    <section class="panel composer" aria-label="输入区">
-      <textarea id="prompt" placeholder="输入消息；Enter 发送，Shift+Enter 换行"></textarea>
+    <section class="panel composer" aria-label="Message input">
+      <textarea id="prompt" placeholder="Type a message; Enter to send, Shift+Enter for newline"></textarea>
       <div class="action-row">
         <input id="files" class="file" type="file" multiple accept=".pdf,.doc,.docx,.dot,.csv,.xlsx,.xls,.txt,.text,.md,.js,.mjs,.ts,.jsx,.tsx,.vue,.html,.htm,.css,.svg,.svgz,.xml,.json,.jsonc,.wasm,.tex,.latex,.c,.h,.cc,.cxx,.cpp,.hpp,.hh,.hxx,.ino,.java,.kt,.kts,.scala,.groovy,.go,.rs,.swift,.php,.rb,.cs,.vb,.fs,.csproj,.sln,.sql,.lua,.r,.pl,.tcl,.awk,.fish,.yaml,.yml,.toml,.ini,.sh,.bat,.cmd,.dockerfile,.containerfile,.proto,.thrift,.graphql,.gql,.qmd,.smali,.gif,.webp,.jpg,.jpeg,.png,.bmp,.icns,.jp2,.sgi,.tif,.tiff,.mkv,.mov,.wav,.mp3,.m4a,.amr,.aac,image/*,audio/*,video/*" />
-        <button id="send" class="primary" type="button">发送</button>
-        <button id="stop" class="btn" type="button" disabled>中断</button>
-        <button id="clear" class="warn" type="button">清空会话</button>
+        <button id="send" class="primary" type="button">Send</button>
+        <button id="stop" class="btn" type="button" disabled>Stop</button>
+        <button id="clear" class="warn" type="button">Clear chat</button>
       </div>
       <div id="atts"></div>
       <div id="status" class="status"></div>
@@ -559,112 +569,21 @@
         status: document.getElementById('status'),
         imageGenMode: document.getElementById('imageGenMode'),
         imageSize: document.getElementById('imageSize'),
-        imageCount: document.getElementById('imageCount')
+        imageCount: document.getElementById('imageCount'),
+        toolChoice: document.getElementById('toolChoice'),
+        loadSampleTools: document.getElementById('loadSampleTools'),
+        toolsConfigRow: document.getElementById('toolsConfigRow'),
+        toolsJson: document.getElementById('toolsJson')
       };
 
       function getPreferredLang() {
-        var v = '';
-        try { v = localStorage.getItem(LANG_KEY) || ''; } catch (_) {}
-        v = String(v || '').toLowerCase();
-        if (v === 'en' || v === 'zh') return v;
-        try {
-          var nav = (navigator && (navigator.language || (navigator.languages && navigator.languages[0]))) || '';
-          nav = String(nav || '').toLowerCase();
-          if (nav.indexOf('zh') === 0) return 'zh';
-        } catch (_) {}
         return 'en';
       }
 
       function t(key) {
-        var L = state.lang || 'zh';
         var dict = {
-          zh: {
-            brandSub: '轻量 · 流式 · 支持附件',
-            apiKeyPh: 'API Key（可选）',
-            refreshModels: '刷新模型',
-            refreshModelsLoading: '加载中...',
-            showLogs: '显示日志',
-            hideLogs: '隐藏日志',
-            clearChat: '清空会话',
-            logsTitle: '运行日志',
-            clear: '清空',
-            videoTag: '视频分析（可选）',
-            videoPh: '粘贴视频链接；发送时自动进入视频分析；留空则普通对话',
-            inputPh: '输入消息；Enter 发送，Shift+Enter 换行',
-            send: '发送',
-            sending: '发送中...',
-            stop: '中断',
-            stopping: '中断中...',
-            retry: '重发',
-            assistant: '助手',
-            user: '用户',
-            think: '思考过程',
-            emptyAssistant: '（空响应）',
-            attachMsg: '[附件消息]',
-            attachPrefix: '[附件] ',
-            emptyHint: '开始对话吧。支持粘贴文本、上传文件，Enter 发送。'
-            ,ready: '就绪。'
-            ,loadingModels: '正在加载模型列表...'
-            ,modelsUpdated: '模型列表已更新（{n}）'
-            ,modelsLoadingWait: '模型列表加载中，请稍候。'
-            ,modelsLoadingWaitSend: '模型列表加载中，请稍候发送。'
-            ,resendWait: '模型列表加载中，请稍候重发。'
-            ,onlyResendUser: '仅支持重发用户消息。'
-            ,historySimplified: '历史附件已简化，已回退为文本重发。'
-            ,inputOrFileRequired: '请输入内容或选择附件。'
-            ,processingAttachments: '正在处理附件...'
-            ,attachmentsFailed: '附件处理失败'
-            ,requestingChat: '请求中（流式）...'
-            ,requestingLogs: '请求中（日志）...'
-            ,requestingVideo: '请求中（视频分析）...'
-            ,requestingVideoLogs: '请求中（视频分析 + 日志）...'
-            ,done: '完成。'
-            ,aborted: '已中断请求。'
-            ,abortInProgress: '正在中断请求...'
-            ,noActiveRequest: '当前没有进行中的请求。'
-            ,busyNoDoubleSend: '请求进行中，请勿重复发送。'
-            ,maxAttachments: '最多允许 {n} 个附件。'
-            ,fileTooLarge: '文件过大：{name}（上限 {max}）'
-            ,addedAttachments: '已选择 {n} 个附件。'
-            ,addedAndSkipped: '已添加 {added} 个附件，跳过 {skipped} 个重复/无效附件。'
-            ,addedNoneSkipped: '未新增附件（均为重复或无效文件）。'
-            ,videoUrlInvalid: '视频链接需以 http:// 或 https:// 开头。'
-            ,videoSet: '已设置视频链接：发送时将自动进入视频分析。'
-            ,videoCleared: '已清空视频链接：将恢复普通对话。'
-            ,videoRestored: '已恢复上次视频链接。'
-            ,logsClearBusy: '请求进行中，暂不能清空日志。'
-            ,logsClearBusyModels: '模型列表加载中，请稍候清空日志。'
-            ,logsCleared: '日志已清空。'
-            ,logsAlreadyEmpty: '日志已为空。'
-            ,clearChatBusy: '请求进行中，暂不能清空会话。'
-            ,clearChatBusyModels: '模型列表加载中，请稍候清空会话。'
-            ,chatCleared: '会话已清空。'
-            ,chatAlreadyEmpty: '会话已为空。'
-            ,refreshModelsBusy: '请求进行中，暂不能刷新模型。'
-            ,loadingModelsStatus: '正在加载模型列表...'
-            ,requestFailed: '请求失败'
-            ,abortedTag: '[已中断]'
-            ,errorTag: '[错误]'
-            ,fileReadFailed: '读取文件失败: {name}'
-            ,attachmentRemoveBusy: '请求进行中，暂不能修改附件。'
-            ,attachmentRemoveBusyModels: '模型列表加载中，请稍候再修改附件。'
-            ,remove: '移除'
-            ,modelsLoadFailedFallback: '加载模型失败，已回退默认模型。'
-            ,authFailed: '鉴权失败：Incorrect API key provided.'
-            ,payloadTooLarge: '请求体过大，请减小附件。'
-            ,serverError: '服务端异常，请稍后重试。'
-            ,settings: '设置'
-            ,imageProxy: '图片代理前缀'
-            ,imageProxyPh: '例如：https://proxy.example.com/?url='
-            ,imageProxyHint: '设置后，图片链接会直接拼接到该代理地址之后。留空则不使用代理。'
-            ,save: '保存'
-            ,cancel: '取消'
-            ,clearProxy: '清除代理'
-            ,imageProxySet: '图片代理已设置。'
-            ,imageProxyCleared: '图片代理已清除。'
-          },
           en: {
-            brandSub: 'Light · Streaming · Attachments',
+            brandSub: 'Light · Streaming · Attachments · Tools',
             apiKeyPh: 'API key (optional)',
             refreshModels: 'Refresh models',
             refreshModelsLoading: 'Loading...',
@@ -687,7 +606,7 @@
             emptyAssistant: '(empty response)',
             attachMsg: '[Attachment message]',
             attachPrefix: '[Attachments] ',
-            emptyHint: 'Start chatting. Paste text, upload files, press Enter to send.'
+            emptyHint: 'Start chatting. Paste text, upload files, or test function tools. Press Enter to send.'
             ,ready: 'Ready.'
             ,loadingModels: 'Loading model list...'
             ,modelsUpdated: 'Model list updated ({n})'
@@ -749,7 +668,7 @@
             ,imageProxyCleared: 'Image proxy cleared.'
           }
         };
-        return (dict[L] && dict[L][key]) || (dict.zh && dict.zh[key]) || key;
+        return (dict.en && dict.en[key]) || key;
       }
 
       function tf(key, params) {
@@ -759,9 +678,9 @@
       }
 
       function applyLangToUI() {
-        document.documentElement.setAttribute('lang', state.lang === 'en' ? 'en' : 'zh-CN');
+        document.documentElement.setAttribute('lang', 'en');
         try { document.documentElement.style.setProperty('--empty-hint', '"' + String(t('emptyHint')).replace(/"/g, '\\"') + '"'); } catch (_) {}
-        if (e.langToggle) e.langToggle.textContent = state.lang === 'en' ? '中文' : 'EN';
+        if (e.langToggle) e.langToggle.textContent = 'EN';
 
         var brandSub = document.getElementById('brandSub');
         if (brandSub) brandSub.textContent = t('brandSub');
@@ -789,11 +708,9 @@
         rHist();
       }
 
-      function setLang(next) {
-        var v = String(next || '').toLowerCase();
-        if (v !== 'en' && v !== 'zh') v = 'zh';
-        state.lang = v;
-        try { localStorage.setItem(LANG_KEY, v); } catch (_) {}
+      function setLang() {
+        state.lang = 'en';
+        try { localStorage.setItem(LANG_KEY, 'en'); } catch (_) {}
         applyLangToUI();
       }
 
@@ -1170,7 +1087,7 @@
         if (code === 401) return t('authFailed');
         if (code === 413) return t('payloadTooLarge');
         if (code >= 500) return t('serverError');
-        return payloadText ? (t('requestFailed') + '：' + payloadText) : (t('requestFailed') + '（HTTP ' + code + '）');
+        return payloadText ? (t('requestFailed') + ': ' + payloadText) : (t('requestFailed') + ' (HTTP ' + code + ')');
       }
       async function readErrorPayload(resp) {
         var txt = await resp.text().catch(function () { return ''; });
@@ -1181,23 +1098,31 @@
       function extractAssistantText(payloadJson, payloadText) {
         if (payloadJson) {
           var c0 = payloadJson.choices && payloadJson.choices[0];
-          var msgContent = c0 && c0.message && c0.message.content;
-          var reasoning = c0 && c0.message && (c0.message.reasoning_content || c0.message.thinking || c0.message.reasoning);
-          if (typeof msgContent === 'string' && msgContent.trim()) return msgContent;
-          if (Array.isArray(msgContent)) {
-            var parts = [];
+          var msgObj = c0 && c0.message;
+          var msgContent = msgObj && msgObj.content;
+          var reasoning = msgObj && (msgObj.reasoning_content || msgObj.thinking || msgObj.reasoning);
+          var toolCalls = msgObj && msgObj.tool_calls;
+          var outParts = [];
+          if (typeof reasoning === 'string' && reasoning.trim()) {
+            outParts.push('<think>' + reasoning.trim() + '</think>');
+          }
+          if (typeof msgContent === 'string' && msgContent.trim()) {
+            outParts.push(msgContent.trim());
+          } else if (Array.isArray(msgContent)) {
             for (var i = 0; i < msgContent.length; i++) {
               var p = msgContent[i] || {};
-              if (typeof p === 'string' && p.trim()) parts.push(p.trim());
-              else if (typeof p.text === 'string' && p.text.trim()) parts.push(p.text.trim());
-              else if (typeof p.output_text === 'string' && p.output_text.trim()) parts.push(p.output_text.trim());
+              if (typeof p === 'string' && p.trim()) outParts.push(p.trim());
+              else if (typeof p.text === 'string' && p.text.trim()) outParts.push(p.text.trim());
+              else if (typeof p.output_text === 'string' && p.output_text.trim()) outParts.push(p.output_text.trim());
             }
-            if (parts.length > 0) return parts.join('\n');
           }
+          if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+            outParts.push('[tool_calls]\n' + JSON.stringify(toolCalls, null, 2));
+          }
+          if (outParts.length > 0) return outParts.join('\n\n');
           var c0text = c0 && c0.text;
           if (typeof c0text === 'string' && c0text.trim()) return c0text;
           if (typeof payloadJson.output_text === 'string' && payloadJson.output_text.trim()) return payloadJson.output_text;
-          if (typeof reasoning === 'string' && reasoning.trim()) return '<think>' + reasoning.trim() + '</think>';
         }
         return payloadText || '';
       }
@@ -1246,14 +1171,18 @@
             var d0 = parsed && parsed.choices && parsed.choices[0] && parsed.choices[0].delta;
             var delta = d0 && d0.content;
             var reasoning = d0 && (d0.reasoning_content || d0.thinking || d0.reasoning);
+            var toolCalls = d0 && d0.tool_calls;
             if (typeof reasoning === 'string' && reasoning) outRef.value += '<think>' + reasoning + '</think>';
             if (typeof delta === 'string' && delta) outRef.value += delta;
+            if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+              outRef.value += (outRef.value ? '\n\n' : '') + '[tool_calls]\n' + JSON.stringify(toolCalls, null, 2);
+            }
             if (aMsg && aMsg.setRaw) {
               aMsg.setRaw(outRef.value);
               e.messages.scrollTop = e.messages.scrollHeight;
             }
           } catch (_) {
-            // 忽略损坏行，继续消费后续流
+            // Ignore malformed SSE lines and continue consuming stream
           }
         }
 
@@ -1410,7 +1339,7 @@
           return;
         }
 
-        // 重发时先清掉该消息及其之后的所有消息（对话流和图片生成流通用）
+        // When resending, truncate messages at and after replayFromIndex (for both chat and image generation)
         if (typeof replayFromIndex === 'number' && replayFromIndex >= 0) {
           state.hist = state.hist.slice(0, replayFromIndex);
           save();
@@ -1445,7 +1374,7 @@
           state.sending = true;
           state.ac = new AbortController();
           busy(true);
-          st('正在生成图片...', 'ok');
+          st('Generating images...', 'ok');
           
           try {
             var h = { 'Content-Type': 'application/json' };
@@ -1475,7 +1404,7 @@
             var data = await resp.json();
             var imageUrls = (data.data || []).map(function(item) { return item.url; });
             
-            var resultText = '图片生成完成！点击图片可在新窗口打开。';
+            var resultText = 'Image generation complete! Click any image to open it in a new tab.';
             if (aMsg && aMsg.setRaw) aMsg.setRaw(resultText, imageUrls);
             
             e.messages.scrollTop = e.messages.scrollHeight;
@@ -1485,7 +1414,7 @@
             save();
             e.prompt.value = '';
             attRow();
-            st('图片生成完成！', 'ok');
+            st('Image generation complete!', 'ok');
             return;
           } catch (err) {
             if (err && err.name === 'AbortError') {
@@ -1508,9 +1437,6 @@
           }
           return;
         }
-
-        var model = (e.model.value || '').trim() || 'qwen3.5-plus';
-        var key = (e.apiKey.value || '').trim();
 
         var videoUrl = (e.videoUrl.value || '').trim();
         if (videoUrl) {
@@ -1539,6 +1465,20 @@
           }
         }
 
+        var parsedTools = null;
+        var toolChoiceVal = e.toolChoice ? e.toolChoice.value : 'none';
+        if (toolChoiceVal !== 'none' && e.toolsJson && (e.toolsJson.value || '').trim()) {
+          try {
+            parsedTools = JSON.parse(e.toolsJson.value.trim());
+            if (!Array.isArray(parsedTools) || parsedTools.length === 0) {
+              throw new Error('Tools JSON must be a non-empty array.');
+            }
+          } catch (toolErr) {
+            st('Invalid Tools JSON: ' + (toolErr.message || String(toolErr)), 'err');
+            return;
+          }
+        }
+
         msg('user', summarizeMessageContent(userMessageContent) || t('attachMsg'), state.hist.length);
         var aMsg = msg('assistant', '');
 
@@ -1557,6 +1497,7 @@
         else if (wantLogs) st(t('requestingLogs'), 'ok');
         else st(t('requestingChat'), 'ok');
 
+        var outRef = { value: '' };
         try {
           var h = { 'Content-Type': 'application/json' };
           if (key) h.Authorization = 'Bearer ' + key;
@@ -1564,6 +1505,10 @@
           var endpoint = useLogEndpoint ? apiUrl('/v1/chat/completions/log') : apiUrl('/v1/chat/completions');
           var reqBody = { model: model, stream: true, messages: payload };
           if (wantVideo) reqBody.video_url = videoUrl;
+          if (parsedTools) {
+            reqBody.tools = parsedTools;
+            reqBody.tool_choice = toolChoiceVal;
+          }
 
           var resp = await fetch(endpoint, {
             method: 'POST',
@@ -1600,12 +1545,11 @@
             return;
           }
 
-          if (!resp.body) throw new Error('浏览器不支持流式响应。');
+          if (!resp.body) throw new Error('Browser does not support streaming responses.');
 
           var reader = resp.body.getReader();
           var decoder = new TextDecoder();
           var sseState = createSSEState();
-          var outRef = { value: '' };
           var gotDone = false;
           var streamError = '';
 
@@ -1668,13 +1612,13 @@
         if (state.showLogs) {
           if (e.shell) e.shell.classList.add('has-logs');
           e.logPanel.classList.add('visible');
-          e.logToggle.textContent = '隐藏日志';
+          e.logToggle.textContent = t('hideLogs');
           e.logToggle.classList.add('active');
           e.logs.scrollTop = e.logs.scrollHeight;
         } else {
           if (e.shell) e.shell.classList.remove('has-logs');
           e.logPanel.classList.remove('visible');
-          e.logToggle.textContent = '显示日志';
+          e.logToggle.textContent = t('showLogs');
           e.logToggle.classList.remove('active');
         }
       }
@@ -1786,9 +1730,33 @@
       }
 
       // events
-      if (e.langToggle) {
-        e.langToggle.onclick = function () {
-          setLang(state.lang === 'en' ? 'zh' : 'en');
+      if (e.toolChoice && e.toolsConfigRow) {
+        e.toolChoice.addEventListener('change', function () {
+          e.toolsConfigRow.style.display = e.toolChoice.value === 'none' ? 'none' : 'block';
+        });
+      }
+      if (e.loadSampleTools && e.toolChoice && e.toolsJson && e.toolsConfigRow) {
+        e.loadSampleTools.onclick = function () {
+          e.toolChoice.value = 'auto';
+          e.toolsConfigRow.style.display = 'block';
+          e.toolsJson.value = JSON.stringify([
+            {
+              type: 'function',
+              function: {
+                name: 'get_weather',
+                description: 'Get the current weather for a given city',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    city: { type: 'string', description: 'City name, e.g. Berlin, Tokyo' },
+                    unit: { type: 'string', enum: ['celsius', 'fahrenheit'] }
+                  },
+                  required: ['city']
+                }
+              }
+            }
+          ], null, 2);
+          st('Sample weather tool loaded (Tool Choice: Auto).', 'ok');
         };
       }
       e.logToggle.onclick = function () {
@@ -1858,7 +1826,7 @@
       });
       e.files.onchange = function () {
         if (state.sending || state.modelLoading) {
-          st(state.sending ? '请求进行中，暂不能修改附件。' : '模型列表加载中，请稍候再修改附件。', 'err');
+          st(state.sending ? t('attachmentRemoveBusy') : t('attachmentRemoveBusyModels'), 'err');
           e.files.value = '';
           return;
         }

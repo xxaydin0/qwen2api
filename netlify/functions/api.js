@@ -1,15 +1,15 @@
 /**
- * Netlify Functions 入口 - Node 运行时（非 Edge Function）
+ * Netlify Functions Entry Point - Node Runtime (non-Edge Function)
  *
- * netlify.toml 通过 [[redirects]] 将 /v1/*、/chat、/ 重写到
- * /.netlify/functions/api，由本函数统一处理。
+ * netlify.toml rewrites /v1/*, /chat, and / to /.netlify/functions/api
+ * via [[redirects]], handled uniformly by this function.
  *
- * 与 Edge Function 的区别：
- * - Netlify Functions 在返回前会缓冲完整响应，因此 stream=true 的请求
- *   会被 core.js 收集整段 SSE 后一次性返回（语义不变，非实时推送）。
- * - 超时时间在 netlify.toml 中配置：同步函数上限 Pro/Enterprise 26s、
- *   免费 Hobby 10s。
- * - 无法运行 Chromium/yt-dlp，token 走简化获取方式。
+ * Differences from Edge Functions:
+ * - Standard Netlify Functions buffer the full response before returning, so requests
+ *   with stream=true are collected by core.js as a complete SSE payload and returned at once.
+ * - Timeout is configured in netlify.toml: synchronous function limit is 26s on Pro/Enterprise
+ *   and 10s on free Hobby tier.
+ * - Cannot run Chromium/yt-dlp; tokens use the lightweight fallback path.
  */
 
 const {

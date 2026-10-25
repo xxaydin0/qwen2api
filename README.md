@@ -9,13 +9,12 @@ pinned: false
 
 # Qwen2API
 
-[中文文档](README_ZH.md) | English
-
 A proxy service that converts Qwen Chat to an OpenAI-compatible API.
 
 ## Features
 
 - 🔄 OpenAI API compatible format
+- 🛠️ Reliable OpenAI-compatible Tool / Function Calling (`tools`, `tool_choice`, `parallel_tool_calls`, streaming & non-streaming `tool_calls`)
 - 🚀 Streaming response support (SSE)
 - 🔐 Optional API Token authentication
 - 🌐 Multi-platform deployment: Local NodeJS / Docker, Vercel, Netlify, Cloudflare Workers
@@ -28,7 +27,7 @@ A proxy service that converts Qwen Chat to an OpenAI-compatible API.
 All deployment targets share one codebase: every platform entry (`index.js`,
 `api/index.js`, `netlify/functions/api.js`, `worker.js`) is a thin protocol
 adapter that calls the same `core.js` business logic. Routes, attachment
-uploads, streaming and error handling therefore behave identically everywhere.
+uploads, tool calling, streaming and error handling therefore behave identically everywhere.
 
 ```
                      ┌──────────────────────────────────────┐
@@ -52,7 +51,7 @@ uploads, streaming and error handling therefore behave identically everywhere.
 │  core.js — the single business-logic module (bundled into every entry)  │
 │                                                                          │
 │   Routes:  GET  /v1/models                 (model list from upstream)    │
-│            POST /v1/chat/completions       (chat, OpenAI compatible)     │
+│            POST /v1/chat/completions       (chat + tool calling)         │
 │            POST /v1/chat/completions/log   (chat + progress logs;        │
 │                                              video-analysis endpoint)    │
 │            POST /v1/images/generations     (image generation)            │
@@ -71,7 +70,7 @@ uploads, streaming and error handling therefore behave identically everywhere.
                   ├─ Node + Chromium → real baxia SDK (T2gAv_ + cookies, 25-min cache)
                   └─ serverless / CF → simplified token (wu.json), auto fallback
    ③  Session   createChatSession — /api/v2/chats/new, retry with fresh token ×3
-   ④  Parse     messages → text + attachments (image / audio / video / document)
+   ④  Parse     messages + tools → prompt + tool definitions + attachments
    ⑤  Video     [only /log endpoint] body.video_url → yt-dlp download
                   → wrapped as a video attachment
                   (local/Docker only; serverless returns a clear error)
@@ -80,8 +79,24 @@ uploads, streaming and error handling therefore behave identically everywhere.
    ⑦  Chat      POST /api/v2/chat/completions (upstream SSE, files=uploaded)
    ⑧  Respond   stream=true  → live SSE mapping (Express / Vercel / CF)
                                or buffered SSE, returned whole (Netlify)
-                stream=false → collected JSON chat.completion
+                stream=false → collected JSON chat.completion (with tool_calls)
 ```
+
+### Tool Calling (Function Calling)
+
+`/v1/chat/completions` and `/v1/chat/completions/log` support OpenAI-style tool calling in both streaming (`stream: true`) and non-streaming (`stream: false`) modes:
+
+- **`tools` & `functions`**: Standard OpenAI `tools` array (`[{ "type": "function", "function": { "name", "description", "parameters" } }]`) as well as legacy `functions`.
+- **`tool_choice` & `function_call`**:
+  - `"auto"` (default): Model decides whether to call a tool or reply with text.
+  - `"required"` / `"any"`: Model is required to call at least one declared tool.
+  - `"none"`: Disables tool calling even when `tools` are provided.
+  - `{"type": "function", "function": {"name": "..."}}`: Forces calling a specific function.
+- **Reliability features**:
+  - Schema-enforced `<tool_call>` protocol with automatic JSON repair (handles trailing commas, code fences, single-quoted strings, Python `True`/`False`/`None`, and unclosed tags).
+  - Automatic argument coercion against the JSON Schema (`number`, `integer`, `boolean`, `array`, `object`, `string`, and schema `default` values).
+  - Automatic self-correction retry if `tool_choice` is `"required"` or targets a specific function and the first upstream pass fails to produce a valid tool call.
+  - Multi-turn support for `role: "assistant"` messages with `tool_calls` and `role: "tool"` (or `role: "function"`) result messages.
 
 ### Video analysis flow
 
@@ -110,6 +125,7 @@ body: {
 |------------|----------------|--------|---------|-----------|
 | Real baxia token (Chromium) | ✅ | ❌ simplified | ❌ simplified | ❌ simplified |
 | Live SSE streaming | ✅ | ✅ | ⚠️ buffered | ✅ |
+| Tool / Function calling | ✅ | ✅ | ✅ | ✅ |
 | Video analysis (yt-dlp) | ✅ | ❌ | ❌ | ❌ |
 | Attachment upload (OSS) | ✅ | ✅  | ✅  | ✅  |
 | Chat page `/chat` | ✅ file | ✅ inline | ✅ inline | ✅ inline |
@@ -139,12 +155,12 @@ baxia SDK**, producing stable auth tokens that are rarely blocked by upstream.
 ```bash
 # Local
 npm install
-node index.js            # default port 8765 (override with PORT)
+node index.js            # default port 3000 (override with PORT)
 
 # Docker build + run
 docker build -t qwen2api .
 # NOTE: Chromium inside the container needs enough shared memory -- always add --shm-size
-docker run -d -p 8765:8765 --shm-size=2g -e API_TOKENS=your_token qwen2api
+docker run -d -p 3000:7860 --shm-size=2g -e API_TOKENS=your_token qwen2api
 ```
 
 - The image is Debian-based and bundles `chromium`, `ffmpeg`, and `yt-dlp`.
@@ -162,8 +178,8 @@ Pull and run it directly:
 # Pull the latest image
 docker pull ghcr.io/smanx/qwen2api:latest
 
-# Run (container listens on 7860, mapped to host 8765; Chromium needs shared memory -- always add --shm-size)
-docker run -d -p 8765:7860 --shm-size=2g -e API_TOKENS=your_token ghcr.io/smanx/qwen2api:latest
+# Run (container listens on 7860, mapped to host 3000; Chromium needs shared memory -- always add --shm-size)
+docker run -d -p 3000:7860 --shm-size=2g -e API_TOKENS=your_token ghcr.io/smanx/qwen2api:latest
 ```
 
 - Common tags: `latest` (newest build), `master` (branch), `sha-<7-char sha>` (per commit), `vX.Y.Z` (release tags).
@@ -252,10 +268,10 @@ Three public services are available for testing:
 
 ## Important Notes
 
-- ✅ The `/v1/chat/completions` endpoint now supports attachments and multimodal message parts, including image/file/audio inputs.
+- ✅ The `/v1/chat/completions` endpoint supports attachments and multimodal message parts, including image/file/audio inputs.
+- ✅ Supports OpenAI-compatible Tool / Function Calling (`tools`, `tool_choice`, `parallel_tool_calls`, streaming & non-streaming `tool_calls`).
 - ✅ Supports image understanding and document parsing workflows in chat requests.
 - ⚠️ Attachments are uploaded to Qwen OSS through the same workflow used by Qwen Web, so request latency increases when sending large files.
-- ❌ **Tool calling is not supported** - The project does not implement OpenAI-style tool/function calling capabilities.
 
 ### Limitations (Video URL / Large Files)
 
@@ -296,7 +312,8 @@ The proxy also accepts legacy message-level `files` / `attachments` arrays for c
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/v1/models` | GET | Get model list |
-| `/v1/chat/completions` | POST | Chat completion |
+| `/v1/chat/completions` | POST | Chat completion (with Tool Calling & multimodal support) |
+| `/v1/chat/completions/log` | POST | Chat completion with progress logs & video URL analysis |
 | `/v1/images/generations` | POST | Image generation |
 | `/chat` | GET | Built-in web chat UI |
 | `/` | GET | Health check |
@@ -305,9 +322,8 @@ The proxy also accepts legacy message-level `files` / `attachments` arrays for c
 
 Open `https://your-domain/chat` in a browser to use the built-in chat page.
 
-- Supports streaming output, attachments, and an optional video URL (auto switches to video analysis when a URL is provided)
+- Supports streaming output, tool calling configuration, attachments, and an optional video URL (auto switches to video analysis when a URL is provided)
 - Logs panel can be toggled on/off; when enabled the request uses `/v1/chat/completions/log`
-- Language toggle (ZH/EN) is available in the top bar
 
 ### Request Examples
 
@@ -324,6 +340,34 @@ curl https://your-domain/v1/chat/completions \
     "model": "qwen3.8-max",
     "messages": [{"role": "user", "content": "Hello!"}],
     "stream": true
+  }'
+
+# Tool / Function calling
+curl https://your-domain/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your_token" \
+  -d '{
+    "model": "qwen3.8-max",
+    "messages": [{"role": "user", "content": "What is the weather in Berlin in celsius?"}],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_current_weather",
+          "description": "Get the current weather for a given city",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "location": { "type": "string", "description": "City name" },
+              "unit": { "type": "string", "enum": ["celsius", "fahrenheit"] }
+            },
+            "required": ["location"]
+          }
+        }
+      }
+    ],
+    "tool_choice": "auto",
+    "stream": false
   }'
 
 # Image generation (ratio string format)
@@ -485,7 +529,7 @@ npm install
 # Start development server
 npm run dev
 
-# Server runs at http://localhost:8765
+# Server runs at http://localhost:3000
 ```
 
 ## Disclaimer

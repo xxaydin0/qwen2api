@@ -1,7 +1,7 @@
 /**
- * Qwen2API - 统一入口
+ * Qwen2API - Unified Entry Point
  * 
- * 支持: Docker (Express) / Vercel / Netlify
+ * Supports: Docker (Express) / Vercel / Netlify
  */
 
 const { handleModels, handleChatCompletions, handleChatCompletionsWithLogs, handleImageGenerations, handleRoot, handleChatPage, createResponse, validateToken, uuidv4, mapUpstreamDeltaToOpenAI, tryParseUpstreamErrorPayload, createExpressStreamHandler, createExpressLogStreamHandler } = require('./core.js');
@@ -71,20 +71,20 @@ function patchDnsForHuggingFace() {
 
   try {
     if (!fs.existsSync(resolvPath)) {
-      console.log('[qwen2api][startup][dns] /etc/resolv.conf 不存在，跳过');
+      console.log('[qwen2api][startup][dns] /etc/resolv.conf does not exist, skipping');
       return;
     }
 
     const stat = fs.lstatSync(resolvPath);
     if (!stat.isFile()) {
-      console.log('[qwen2api][startup][dns] /etc/resolv.conf 非普通文件，跳过');
+      console.log('[qwen2api][startup][dns] /etc/resolv.conf is not a regular file, skipping');
       return;
     }
 
     const original = fs.readFileSync(resolvPath, 'utf8');
     if (!fs.existsSync(backupPath)) {
       fs.writeFileSync(backupPath, original, 'utf8');
-      console.log('✅ 已备份 /etc/resolv.conf 到 /etc/resolv.conf.bak');
+      console.log('Backed up /etc/resolv.conf to /etc/resolv.conf.bak');
     }
 
     let resolvContent = original;
@@ -93,7 +93,7 @@ function patchDnsForHuggingFace() {
     if (!/\b8\.8\.8\.8\b/.test(resolvContent)) {
       resolvContent = `nameserver 8.8.8.8\n${resolvContent}`;
       changed = true;
-      console.log('✅ 已添加 DNS 8.8.8.8');
+      console.log('Added DNS 8.8.8.8');
     }
 
     if (!/\b8\.8\.4\.4\b/.test(resolvContent)) {
@@ -101,11 +101,11 @@ function patchDnsForHuggingFace() {
       lines.splice(1, 0, 'nameserver 8.8.4.4');
       resolvContent = lines.join('\n');
       changed = true;
-      console.log('✅ 已添加 DNS 8.8.4.4');
+      console.log('Added DNS 8.8.4.4');
     }
 
     if (!changed) {
-      console.log('[qwen2api][startup][dns] DNS 已包含 8.8.8.8 / 8.8.4.4，无需修改');
+      console.log('[qwen2api][startup][dns] DNS already contains 8.8.8.8 / 8.8.4.4, no changes needed');
       return;
     }
 
@@ -115,7 +115,7 @@ function patchDnsForHuggingFace() {
 
     fs.writeFileSync(resolvPath, resolvContent, 'utf8');
   } catch (err) {
-    console.log(`[qwen2api][startup][dns] 跳过 DNS 配置: ${err && err.message ? err.message : String(err)}`);
+    console.log(`[qwen2api][startup][dns] Skipping DNS configuration: ${err && err.message ? err.message : String(err)}`);
   }
 }
 
@@ -241,7 +241,7 @@ async function serverlessHandler(req, res) {
 }
 
 // ============================================
-// Express Server (Docker / 本地开发)
+// Express Server (Docker / Local Development)
 // ============================================
 
 function startExpressServer() {
@@ -302,7 +302,7 @@ function startExpressServer() {
     return next(error);
   });
 
-  // Token 验证中间件
+  // Token authentication middleware
   function authMiddleware(req, res, next) {
     if (!validateToken(req.headers.authorization)) {
       return res.status(401).json({ error: { message: 'Incorrect API key provided.', type: 'invalid_request_error' } });
@@ -334,8 +334,8 @@ function startExpressServer() {
           if (parsed && parsed.error) {
             payload = parsed;
           } else if (result.statusCode >= 200 && result.statusCode < 300 && parsed) {
-            // 非流式成功响应（stream 未传或为 false）：日志事件已开始 SSE，
-            // 将完整 completion 作为 data 事件输出，保证内容仍能送达。
+            // Non-streaming success response (stream omitted or false): log events already started SSE,
+            // so emit the full completion as a data event to ensure delivery.
             payload = parsed;
           }
         } catch {}
@@ -371,12 +371,12 @@ function startExpressServer() {
     res.status(200).set(result.headers).send(result.body);
   });
 
-  const PORT = process.env.PORT || 8765;
+  const PORT = process.env.PORT || 3000;
   app.listen(PORT, '0.0.0.0', () => console.log(`Qwen2API server running on port ${PORT}`));
 }
 
 // ============================================
-// 导出 & 入口判断
+// Exports & Entry Check
 // ============================================
 
 module.exports = serverlessHandler;
@@ -390,3 +390,4 @@ const isServerless = process.env.VERCEL === '1' || process.env.NETLIFY === 'true
 if (!isServerless && require.main === module) {
   startExpressServer();
 }
+

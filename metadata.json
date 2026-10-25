@@ -1,0 +1,5 @@
+{
+  "name": "Qwen2API",
+  "description": "OpenAI-compatible API proxy for Qwen Chat with reliable tool calling, streaming responses, multimodal attachments, image generation, and built-in web chat UI.",
+  "requestFramePermissions": []
+}

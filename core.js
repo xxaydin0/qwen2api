@@ -1,9 +1,9 @@
 /**
- * 核心业务逻辑 - 所有平台共用
+ * Core business logic - shared across all platforms
  */
 
 // ============================================
-// UUID 生成 (内联，避免 ESM 问题)
+// UUID generation (inlined to avoid ESM issues)
 // ============================================
 
 function uuidv4() {
@@ -14,7 +14,7 @@ function uuidv4() {
 }
 
 // ============================================
-// 配置
+// Configuration
 // ============================================
 
 const BAXIA_VERSION = '2.5.36';
@@ -23,18 +23,18 @@ const QWEN_BASE_URL = 'https://chat.qwen.ai';
 const QWEN_WEB_REFERER = `${QWEN_BASE_URL}/`;
 const QWEN_GUEST_REFERER = `${QWEN_BASE_URL}/c/guest`;
 const WEB_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
-const WEB_ACCEPT_LANGUAGE = 'zh-CN,zh;q=0.9,en;q=0.8';
+const WEB_ACCEPT_LANGUAGE = 'en-US,en;q=0.9';
 let tokenCache = null;
 let tokenCacheTime = 0;
 
 // ============================================
-// 跨平台 require 助手
+// Cross-platform require helper
 // ============================================
 
-// 动态加载 Node 内置模块：Node 环境正常返回模块；无 require 的环境
-// （Cloudflare Workers 等）返回 null，由调用方优雅降级。
-// 注意：必须通过本函数间接 require，避免 esbuild 静态打包 Node 内置模块
-// 导致 CF Worker 构建失败。
+// Dynamically load Node built-in modules: returns the module in Node environments,
+// and returns null in environments without require (e.g., Cloudflare Workers) for graceful fallback.
+// Note: Must require indirectly through this function so esbuild does not statically bundle Node built-ins
+// and break Cloudflare Worker builds.
 function nodeRequire(name) {
   if (typeof require !== 'function') return null;
   try {
@@ -45,7 +45,7 @@ function nodeRequire(name) {
 }
 
 // ============================================
-// Baxia Token 生成
+// Baxia Token Generation
 // ============================================
 
 function randomString(length) {
@@ -59,7 +59,7 @@ function randomString(length) {
 }
 
 function cryptoRandomBytes(length) {
-  // Node 环境优先用 crypto.randomBytes；其他环境回退 WebCrypto
+  // Prefer crypto.randomBytes in Node environments; fallback to WebCrypto elsewhere
   const nodeCrypto = nodeRequire('crypto');
   if (nodeCrypto && typeof nodeCrypto.randomBytes === 'function') {
     return nodeCrypto.randomBytes(length);
@@ -70,7 +70,7 @@ function cryptoRandomBytes(length) {
 }
 
 function cryptoHash(data) {
-  // Node 环境用 MD5；其他环境（CF Workers / 浏览器）返回随机字符串
+  // Use MD5 in Node environments; return random string in other environments (CF Workers / Browser)
   const nodeCrypto = nodeRequire('crypto');
   if (nodeCrypto && typeof nodeCrypto.createHash === 'function') {
     return nodeCrypto.createHash('md5').update(data).digest('base64').substring(0, 32);
@@ -89,7 +89,7 @@ function generateWebGLFingerprint() {
 
 async function collectFingerprintData() {
   const platforms = ['Win32', 'Linux x86_64', 'MacIntel'];
-  const languages = ['en-US', 'zh-CN', 'en-GB'];
+  const languages = ['en-US', 'en-GB'];
   const canvas = cryptoHash(cryptoRandomBytes(32));
   
   return {
@@ -127,8 +127,8 @@ async function getBaxiaTokens(forceRefresh) {
     return tokenCache;
   }
 
-  // 优先用真实 baxia SDK（系统 Chrome 无头模式生成有效 token）。
-  // 仅在本地 Node 环境可用；serverless / CF Workers 无 Chrome 时自动回退 wu.json。
+  // Prefer the real baxia SDK (headless system Chrome generating valid tokens).
+  // Available in local Node runtime only; serverless / CF Workers without Chrome automatically fall back to wu.json.
   const isNodeRuntime = typeof process !== 'undefined' && process.versions && typeof process.versions.node === 'string';
   const chromeEnabled = isNodeRuntime && (!process.env || process.env.USE_CHROME_BAXIA !== 'false');
   if (chromeEnabled) {
@@ -175,7 +175,7 @@ async function getBaxiaTokens(forceRefresh) {
   return result;
 }
 
-// 创建会话，失败（风控/网络）时自动换 token 重试
+// Create chat session; automatically rotate token and retry on risk-control or network errors
 async function createChatSession(actualModel, chatType, retries = 3) {
   let lastErr = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -193,7 +193,7 @@ async function createChatSession(actualModel, chatType, retries = 3) {
         'x-request-id': uuidv4()
       };
       const createBody = {
-        title: '新建对话', models: [actualModel], chat_mode: 'guest', chat_type: chatType,
+        title: 'New Chat', models: [actualModel], chat_mode: 'guest', chat_type: chatType,
         timestamp: Date.now(), project_id: ''
       };
       const createResp = await fetch(`${QWEN_BASE_URL}/api/v2/chats/new`, {
@@ -213,7 +213,7 @@ async function createChatSession(actualModel, chatType, retries = 3) {
         const parsedErr = tryParseUpstreamErrorPayload(createParsed.rawText);
         lastErr = { parsed: createParsed, status: createResp.status, resp: createResp, parsedErr };
         console.log(`[qwen2api][chat] Create chat session error (attempt ${attempt + 1}): ${JSON.stringify(createData?.data || createData)}`);
-        // 风控/限流类错误值得重试
+        // Retry on risk-control / rate-limit errors
         if (parsedErr?.riskControlled || parsedErr?.code === 'rgv587' || /rgv.?587/i.test(createParsed.rawText || '')) {
           await new Promise(resolve => setTimeout(resolve, 600));
           continue;
@@ -227,7 +227,7 @@ async function createChatSession(actualModel, chatType, retries = 3) {
     }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
-  // 全部失败，返回最合理的错误
+  // All attempts failed; return the most descriptive error
   const last = lastErr || {};
   if (last.parsed) {
     const parsed = last.parsed;
@@ -243,12 +243,12 @@ async function createChatSession(actualModel, chatType, retries = 3) {
 }
 
 // ============================================
-// 认证
+// Authentication
 // ============================================
 
 function getApiTokens(env) {
-  // 注意：不能用 process?.env 直接访问——在 CF Workers 等无 process 的环境里，
-  // 未声明的标识符会直接抛 ReferenceError（可选链救不了未声明变量）。
+  // Note: Do not access process?.env directly — in environments without `process` (e.g. CF Workers),
+  // referencing an undeclared identifier throws a ReferenceError even with optional chaining.
   let tokens = env?.API_TOKENS;
   if (!tokens && typeof process !== 'undefined' && process?.env) {
     tokens = process.env.API_TOKENS;
@@ -265,7 +265,7 @@ function validateToken(authHeader, env) {
 }
 
 // ============================================
-// 响应工具
+// Response Helpers
 // ============================================
 
 function createResponse(body, status = 200, headers = {}) {
@@ -386,6 +386,18 @@ function decodeBase64ToBytes(base64) {
   return bytes;
 }
 
+function bytesToBase64(bytes) {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes).toString('base64');
+  }
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 function parseDataUrl(dataUrl) {
   if (typeof dataUrl !== 'string') return null;
   const matched = dataUrl.match(/^data:([^;,]+)?;base64,(.+)$/i);
@@ -448,7 +460,10 @@ function extractReasoningContentFromDelta(delta) {
   const direct = normalizeReasoningString(delta.reasoning_content || delta.reasoning || '');
   if (direct) return direct;
   const phase = typeof delta.phase === 'string' ? delta.phase : '';
-  if (phase !== 'thinking_summary') return '';
+  if (phase !== 'thinking_summary' && phase !== 'think') return '';
+  if (phase === 'think' && typeof delta.content === 'string') {
+    return normalizeReasoningString(delta.content);
+  }
   const thoughtContent = normalizeReasoningFragments(delta?.extra?.summary_thought?.content);
   if (thoughtContent.length > 0) return thoughtContent.join('\n');
   return '';
@@ -457,12 +472,15 @@ function extractReasoningContentFromDelta(delta) {
 function mapUpstreamDeltaToOpenAI(delta) {
   if (!delta || typeof delta !== 'object') return null;
   const mapped = {};
-  // OpenAI API 规范: 流式响应中 delta.role 只能是 "assistant" 或不设置
-  // 当上游返回 "function" 等角色时，不设置 role 字段
+  // OpenAI API specification: in streaming responses delta.role should only be "assistant" or omitted.
+  // When upstream returns roles like "function", do not set the role field.
   if (delta.role === 'assistant') mapped.role = delta.role;
-  if (typeof delta.content === 'string') mapped.content = delta.content;
+  const phase = typeof delta.phase === 'string' ? delta.phase : '';
   const reasoningContent = extractReasoningContentFromDelta(delta);
   if (reasoningContent) mapped.reasoning_content = reasoningContent;
+  if (phase !== 'think' && phase !== 'thinking_summary' && typeof delta.content === 'string') {
+    mapped.content = delta.content;
+  }
   return Object.keys(mapped).length > 0 ? mapped : null;
 }
 
@@ -551,28 +569,28 @@ function tryParseRatioString(size) {
 }
 
 function mapOpenAiImageSizeToQwenRatio(size) {
-  // Qwen Web t2i 在抓包中使用 ratio 文本，例如 "16:9"。
-  // 支持两种格式：
-  // 1. 直接比例字符串："1:1", "16:9", "9:16", "4:3", "3:4"
-  // 2. OpenAI 格式："1024x1024" (映射到最接近的比例)
+  // Qwen Web t2i uses ratio strings such as "16:9".
+  // Supports two formats:
+  // 1. Direct ratio string: "1:1", "16:9", "9:16", "4:3", "3:4"
+  // 2. OpenAI size format: "1024x1024" (mapped to the closest supported ratio)
   
-  // 首先尝试直接解析比例字符串
+  // First try parsing a direct ratio string
   const ratio = tryParseRatioString(size);
   if (ratio) {
-    // 验证是否为支持的比例
+    // Validate against supported ratios
     const validRatios = ['1:1', '16:9', '9:16', '4:3', '3:4'];
     if (validRatios.includes(ratio)) {
       return ratio;
     }
   }
   
-  // 否则尝试解析 OpenAI 尺寸格式并映射到最近比例
+  // Otherwise parse OpenAI size format and map to the nearest ratio
   const parsed = tryParseOpenAiImageSize(size);
   if (!parsed) return '1:1';
   const { width, height } = parsed;
   const r = width / height;
 
-  // 常见目标比例
+  // Supported target ratios
   const candidates = [
     { key: '1:1', r: 1 },
     { key: '16:9', r: 16 / 9 },
@@ -619,7 +637,7 @@ function extractImageUrlsFromUpstreamSse(rawPayload) {
     }
   }
 
-  // 去重但保持顺序
+  // Deduplicate while preserving order
   const seen = new Set();
   const out = [];
   for (const u of urls) {
@@ -641,7 +659,7 @@ function extractUpstreamErrorFromSse(rawPayload) {
       const parsed = JSON.parse(data);
       const err = parsed?.error;
       if (err && err.code === 'data_inspection_failed') {
-        return { message: err.details || err.message || '内容安全警告', code: err.code };
+        return { message: err.details || err.message || 'Content safety warning', code: err.code };
       }
     } catch {}
   }
@@ -743,7 +761,7 @@ function extractInlineTextFromAttachment(source, mimeType, filename) {
   if (!text) return '';
   const label = normalizeInputString(filename) || 'unnamed.txt';
   const capped = text.length > 12000 ? `${text.slice(0, 12000)}\n...[truncated]` : text;
-  return `[附件文本 ${label}]\n${capped}`;
+  return `[Attachment Text ${label}]\n${capped}`;
 }
 
 function pushTextPart(parts, value) {
@@ -848,40 +866,710 @@ function normalizeLegacyFiles(message) {
   return attachments;
 }
 
-function parseIncomingMessages(messages) {
-  const safeMessages = Array.isArray(messages) ? messages : [];
-  const normalized = safeMessages.map(message => {
-    const parsed = normalizeContentParts(message?.content);
-    return {
-      role: message?.role || 'user',
-      text: parsed.text,
-      attachments: [...parsed.attachments, ...normalizeLegacyFiles(message)],
+// ============================================
+// Reliable OpenAI-Compatible Tool Calling Engine
+// ============================================
+
+function normalizeToolsConfig(body) {
+  const rawTools = Array.isArray(body?.tools) ? body.tools : [];
+  const rawFunctions = Array.isArray(body?.functions) ? body.functions : [];
+  const useLegacyFunctions = rawTools.length === 0 && rawFunctions.length > 0;
+
+  const tools = [];
+  const toolMap = new Map();
+
+  for (const item of rawTools) {
+    if (!item || typeof item !== 'object') continue;
+    const fn = item.type === 'function' && item.function && typeof item.function === 'object'
+      ? item.function
+      : (item.name ? item : null);
+    if (!fn || typeof fn.name !== 'string' || !fn.name.trim()) continue;
+    const name = fn.name.trim();
+    const normalizedFn = {
+      name,
+      description: typeof fn.description === 'string' ? fn.description.trim() : '',
+      parameters: fn.parameters && typeof fn.parameters === 'object'
+        ? fn.parameters
+        : { type: 'object', properties: {} },
+      strict: !!fn.strict,
     };
-  });
+    if (!toolMap.has(name)) {
+      toolMap.set(name, normalizedFn);
+      tools.push({ type: 'function', function: normalizedFn });
+    }
+  }
+
+  for (const fn of rawFunctions) {
+    if (!fn || typeof fn !== 'object' || typeof fn.name !== 'string' || !fn.name.trim()) continue;
+    const name = fn.name.trim();
+    if (toolMap.has(name)) continue;
+    const normalizedFn = {
+      name,
+      description: typeof fn.description === 'string' ? fn.description.trim() : '',
+      parameters: fn.parameters && typeof fn.parameters === 'object'
+        ? fn.parameters
+        : { type: 'object', properties: {} },
+      strict: !!fn.strict,
+    };
+    toolMap.set(name, normalizedFn);
+    tools.push({ type: 'function', function: normalizedFn });
+  }
+
+  const rawChoice = body?.tool_choice !== undefined ? body.tool_choice : body?.function_call;
+  let mode = 'auto';
+  let forcedFunctionName = null;
+
+  if (tools.length === 0) {
+    mode = 'none';
+  } else if (typeof rawChoice === 'string') {
+    const lowered = rawChoice.trim().toLowerCase();
+    if (lowered === 'none') {
+      mode = 'none';
+    } else if (lowered === 'required' || lowered === 'any') {
+      mode = 'required';
+    } else if (lowered === 'auto' || !lowered) {
+      mode = 'auto';
+    } else if (toolMap.has(rawChoice.trim())) {
+      mode = 'function';
+      forcedFunctionName = rawChoice.trim();
+    }
+  } else if (rawChoice && typeof rawChoice === 'object') {
+    const candidateName = normalizeInputString(rawChoice?.function?.name || rawChoice?.name);
+    if (candidateName) {
+      mode = 'function';
+      forcedFunctionName = candidateName;
+    }
+  }
+
+  const parallelToolCalls = body?.parallel_tool_calls !== false;
+  const hasActiveTools = tools.length > 0 && mode !== 'none';
+
+  return {
+    tools,
+    toolMap,
+    mode,
+    forcedFunctionName,
+    parallelToolCalls,
+    useLegacyFunctions,
+    hasActiveTools,
+  };
+}
+
+function buildToolCallingInstructions(toolsConfig) {
+  if (!toolsConfig || !toolsConfig.hasActiveTools) return '';
+
+  const activeTools = toolsConfig.mode === 'function' && toolsConfig.forcedFunctionName
+    ? toolsConfig.tools.filter(t => t.function.name === toolsConfig.forcedFunctionName)
+    : toolsConfig.tools;
+  const serializedTools = (activeTools.length > 0 ? activeTools : toolsConfig.tools)
+    .map(t => JSON.stringify(t))
+    .join('\n');
+
+  const choiceRule = toolsConfig.mode === 'function' && toolsConfig.forcedFunctionName
+    ? `CRITICAL REQUIREMENT: You MUST invoke the tool "${toolsConfig.forcedFunctionName}" in this turn. Do NOT respond with plain text; output ONLY the <tool_call> block for "${toolsConfig.forcedFunctionName}".`
+    : toolsConfig.mode === 'required'
+      ? 'CRITICAL REQUIREMENT: You MUST invoke at least one of the provided tools in this turn. Do NOT respond with plain text; output ONLY the <tool_call> block(s).'
+      : 'When a user request can be answered or fulfilled by calling one of the provided tools, output the <tool_call> block(s) instead of guessing or fabricating tool results. If no tool is relevant or needed, answer normally.';
+
+  const parallelRule = toolsConfig.parallelToolCalls
+    ? 'If multiple tool calls are needed and independent, you may emit multiple <tool_call>...</tool_call> blocks in sequence.'
+    : 'Emit at most ONE <tool_call>...</tool_call> block in this turn.';
+
+  return [
+    '# Tools',
+    '',
+    'You have access to the following function tools:',
+    '<tools>',
+    serializedTools,
+    '</tools>',
+    '',
+    '## Tool Calling Protocol',
+    'To call a function tool, respond with one (or more) XML blocks in this EXACT format:',
+    '<tool_call>',
+    '{"name": "<function_name>", "arguments": <valid_json_object>}',
+    '</tool_call>',
+    '',
+    'Strict Rules for Tool Calling:',
+    '1. Inside <tool_call>...</tool_call>, output ONLY a single valid JSON object with keys "name" (string) and "arguments" (JSON object matching the parameter schema).',
+    '2. Do NOT wrap <tool_call> in markdown code fences (no ```xml or ```json).',
+    '3. Ensure all required parameters defined in the tool schema are provided with their exact types (numbers as numbers, booleans as booleans, arrays as arrays).',
+    '4. When you emit a <tool_call>, do NOT fabricate <tool_response> — stop immediately after the closing </tool_call> tag and wait for the user/system to supply the tool execution result.',
+    `5. ${parallelRule}`,
+    `6. ${choiceRule}`,
+  ].join('\n');
+}
+
+function formatMessageForHistory(message) {
+  const role = (message?.role || 'user').toLowerCase();
+  const parsed = normalizeContentParts(message?.content);
+  const attachments = [...parsed.attachments, ...normalizeLegacyFiles(message)];
+
+  if (role === 'tool' || role === 'function') {
+    const toolCallId = normalizeInputString(message?.tool_call_id || message?.id) || 'call_result';
+    const toolName = normalizeInputString(message?.name) || 'tool';
+    const rawContent = typeof message?.content === 'string'
+      ? message.content
+      : (parsed.text || JSON.stringify(message?.content ?? ''));
+    return {
+      role: 'tool',
+      text: `<tool_response id="${toolCallId}" name="${toolName}">\n${rawContent}\n</tool_response>`,
+      attachments,
+    };
+  }
+
+  if (role === 'assistant') {
+    const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+    const legacyCall = message?.function_call && typeof message.function_call === 'object'
+      ? [{ id: 'call_legacy', type: 'function', function: message.function_call }]
+      : [];
+    const allCalls = [...toolCalls, ...legacyCall];
+    const serializedCalls = allCalls.map((tc) => {
+      const fnName = tc?.function?.name || tc?.name || '';
+      if (!fnName) return '';
+      let argsObj = {};
+      const rawArgs = tc?.function?.arguments ?? tc?.arguments;
+      if (typeof rawArgs === 'string') {
+        try {
+          argsObj = JSON.parse(rawArgs);
+        } catch {
+          argsObj = { _raw: rawArgs };
+        }
+      } else if (rawArgs && typeof rawArgs === 'object') {
+        argsObj = rawArgs;
+      }
+      const callPayload = {
+        ...(tc?.id ? { id: tc.id } : {}),
+        name: fnName,
+        arguments: argsObj,
+      };
+      return `<tool_call>\n${JSON.stringify(callPayload)}\n</tool_call>`;
+    }).filter(Boolean).join('\n');
+
+    const combinedText = [parsed.text, serializedCalls].filter(Boolean).join('\n');
+    return {
+      role: 'assistant',
+      text: combinedText,
+      attachments,
+    };
+  }
+
+  return {
+    role,
+    text: parsed.text,
+    attachments,
+  };
+}
+
+function parseIncomingMessages(messages, toolsConfig = null) {
+  const safeMessages = Array.isArray(messages) ? messages : [];
+  const normalized = safeMessages.map(formatMessageForHistory);
+
+  const allAttachments = [];
+  for (const m of normalized) {
+    if (Array.isArray(m.attachments) && m.attachments.length > 0) {
+      allAttachments.push(...m.attachments);
+    }
+  }
+
+  const toolSystemBlock = toolsConfig && toolsConfig.hasActiveTools
+    ? buildToolCallingInstructions(toolsConfig)
+    : '';
 
   if (normalized.length === 0) {
-    return { content: '', attachments: [] };
+    return { content: toolSystemBlock, attachments: [] };
   }
 
   const last = normalized[normalized.length - 1];
-  const history = normalized.slice(0, -1)
-    .map(m => {
-      if (!m.text) return '';
-      const role = m.role === 'assistant' ? 'Assistant' : m.role === 'system' ? 'System' : 'User';
-      return `[${role}]: ${m.text}`;
-    })
-    .filter(Boolean)
-    .join('\n\n');
+  const historyParts = [];
+  if (toolSystemBlock) {
+    historyParts.push(`[System]:\n${toolSystemBlock}`);
+  }
 
-  const lastText = last.text || (last.attachments.length > 0 ? '请结合附件内容回答。' : '');
-  const merged = history
-    ? `${history}\n\n[User]: ${lastText}`
-    : lastText;
+  for (let i = 0; i < normalized.length - 1; i++) {
+    const m = normalized[i];
+    if (!m.text) continue;
+    const roleLabel = m.role === 'assistant'
+      ? 'Assistant'
+      : m.role === 'system' || m.role === 'developer'
+        ? 'System'
+        : m.role === 'tool'
+          ? 'Tool'
+          : 'User';
+    historyParts.push(`[${roleLabel}]: ${m.text}`);
+  }
+
+  const history = historyParts.join('\n\n');
+  const lastRoleLabel = last.role === 'tool'
+    ? 'Tool'
+    : last.role === 'system' || last.role === 'developer'
+      ? 'System'
+      : last.role === 'assistant'
+        ? 'Assistant'
+        : 'User';
+  const lastText = last.text || (allAttachments.length > 0 ? 'Please answer based on the attached files.' : '');
+
+  let merged;
+  if (history) {
+    const suffixReminder = toolsConfig && toolsConfig.hasActiveTools && (toolsConfig.mode === 'required' || toolsConfig.mode === 'function')
+      ? `\n\n[System Reminder]: Output ONLY the required <tool_call>...</tool_call> XML block${toolsConfig.forcedFunctionName ? ` for "${toolsConfig.forcedFunctionName}"` : ''}.`
+      : '';
+    merged = `${history}\n\n[${lastRoleLabel}]: ${lastText}${suffixReminder}`;
+  } else {
+    merged = lastText;
+  }
 
   return {
     content: merged,
-    attachments: last.attachments,
+    attachments: allAttachments,
   };
+}
+
+function stripMarkdownFences(raw) {
+  if (typeof raw !== 'string') return '';
+  let text = raw.trim();
+  const fenceMatch = text.match(/^```(?:json|xml|javascript|js|ts|tool_call)?\s*([\s\S]*?)\s*```$/i);
+  if (fenceMatch) {
+    text = fenceMatch[1].trim();
+  }
+  return text;
+}
+
+function extractBalancedJsonObjects(text) {
+  const results = [];
+  if (typeof text !== 'string' || !text) return results;
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let quoteChar = '"';
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      if (inString) escaped = true;
+      continue;
+    }
+    if (inString) {
+      if (ch === quoteChar) {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      quoteChar = ch;
+      continue;
+    }
+    if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === '}') {
+      if (depth > 0) {
+        depth--;
+        if (depth === 0 && start >= 0) {
+          results.push({
+            raw: text.slice(start, i + 1),
+            start,
+            end: i + 1,
+          });
+          start = -1;
+        }
+      }
+    }
+  }
+  return results;
+}
+
+function repairJsonString(raw) {
+  if (typeof raw !== 'string') return null;
+  let candidate = stripMarkdownFences(raw)
+    .replace(/^\s*<tool_call>\s*/i, '')
+    .replace(/\s*<\/tool_call>\s*$/i, '')
+    .trim();
+
+  if (!candidate) return null;
+
+  try {
+    return JSON.parse(candidate);
+  } catch {}
+
+  // Attempt common syntax repairs: trailing commas, Python literals, smart quotes
+  let repaired = candidate
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/,\s*([}\]])/g, '$1')
+    .replace(/:\s*True\b/g, ': true')
+    .replace(/:\s*False\b/g, ': false')
+    .replace(/:\s*None\b/g, ': null');
+
+  try {
+    return JSON.parse(repaired);
+  } catch {}
+
+  // Balance missing closing braces/brackets if truncated
+  const openBraces = (repaired.match(/\{/g) || []).length;
+  const closeBraces = (repaired.match(/\}/g) || []).length;
+  if (openBraces > closeBraces && openBraces - closeBraces <= 4) {
+    const padded = repaired + '}'.repeat(openBraces - closeBraces);
+    try {
+      return JSON.parse(padded);
+    } catch {}
+  }
+
+  // Extract first balanced JSON object inside the string
+  const balanced = extractBalancedJsonObjects(repaired);
+  for (const item of balanced) {
+    try {
+      return JSON.parse(item.raw);
+    } catch {}
+  }
+
+  return null;
+}
+
+function resolveCanonicalToolName(rawName, toolsConfig) {
+  const name = normalizeInputString(rawName);
+  if (!name) return null;
+  if (!toolsConfig || !toolsConfig.toolMap || toolsConfig.toolMap.size === 0) {
+    return name;
+  }
+  if (toolsConfig.toolMap.has(name)) {
+    return name;
+  }
+  // Strip common namespaces such as "functions.get_weather" or "tools:get_weather"
+  const stripped = name.replace(/^(?:functions?|tools?|call)[.:/]/i, '');
+  if (toolsConfig.toolMap.has(stripped)) {
+    return stripped;
+  }
+  // Case-insensitive match
+  const lower = stripped.toLowerCase();
+  for (const key of toolsConfig.toolMap.keys()) {
+    if (key.toLowerCase() === lower) {
+      return key;
+    }
+  }
+  return null;
+}
+
+function coerceValueBySchema(value, propSchema) {
+  if (!propSchema || typeof propSchema !== 'object' || value === undefined || value === null) {
+    return value;
+  }
+  const targetType = Array.isArray(propSchema.type)
+    ? propSchema.type.find(t => t !== 'null') || propSchema.type[0]
+    : propSchema.type;
+
+  if (targetType === 'number' || targetType === 'integer') {
+    if (typeof value === 'string' && value.trim() !== '') {
+      const num = Number(value.trim());
+      if (Number.isFinite(num)) {
+        return targetType === 'integer' ? Math.trunc(num) : num;
+      }
+    }
+    return value;
+  }
+
+  if (targetType === 'boolean') {
+    if (typeof value === 'string') {
+      const lowered = value.trim().toLowerCase();
+      if (lowered === 'true' || lowered === '1') return true;
+      if (lowered === 'false' || lowered === '0') return false;
+    }
+    return value;
+  }
+
+  if (targetType === 'array') {
+    if (typeof value === 'string') {
+      const parsed = repairJsonString(value);
+      if (Array.isArray(parsed)) return parsed;
+    }
+    return value;
+  }
+
+  if (targetType === 'object') {
+    if (typeof value === 'string') {
+      const parsed = repairJsonString(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return coerceToolArguments(parsed, propSchema);
+      }
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return coerceToolArguments(value, propSchema);
+    }
+    return value;
+  }
+
+  if (targetType === 'string' && typeof value !== 'string') {
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+  }
+
+  return value;
+}
+
+function coerceToolArguments(rawArgs, parametersSchema) {
+  let argsObj = {};
+  if (typeof rawArgs === 'string') {
+    const parsed = repairJsonString(rawArgs);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      argsObj = { ...parsed };
+    }
+  } else if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) {
+    argsObj = { ...rawArgs };
+  }
+
+  const schema = parametersSchema && typeof parametersSchema === 'object' ? parametersSchema : null;
+  const properties = schema?.properties && typeof schema.properties === 'object' ? schema.properties : null;
+  if (!properties) {
+    return argsObj;
+  }
+
+  const propKeys = Object.keys(properties);
+  const coerced = {};
+
+  for (const [k, v] of Object.entries(argsObj)) {
+    if (Object.prototype.hasOwnProperty.call(properties, k)) {
+      coerced[k] = coerceValueBySchema(v, properties[k]);
+    } else {
+      // Case-insensitive property key match
+      const matchedKey = propKeys.find(pk => pk.toLowerCase() === k.toLowerCase());
+      if (matchedKey && argsObj[matchedKey] === undefined) {
+        coerced[matchedKey] = coerceValueBySchema(v, properties[matchedKey]);
+      } else {
+        coerced[k] = v;
+      }
+    }
+  }
+
+  // Apply schema defaults for missing required fields when available
+  const requiredList = Array.isArray(schema?.required) ? schema.required : [];
+  for (const reqKey of requiredList) {
+    if (coerced[reqKey] === undefined && properties[reqKey] && properties[reqKey].default !== undefined) {
+      coerced[reqKey] = properties[reqKey].default;
+    }
+  }
+
+  return coerced;
+}
+
+function normalizeParsedToolCandidate(candidate, toolsConfig) {
+  if (!candidate || typeof candidate !== 'object') return [];
+
+  if (Array.isArray(candidate)) {
+    const out = [];
+    for (const item of candidate) {
+      out.push(...normalizeParsedToolCandidate(item, toolsConfig));
+    }
+    return out;
+  }
+
+  if (Array.isArray(candidate.tool_calls)) {
+    return normalizeParsedToolCandidate(candidate.tool_calls, toolsConfig);
+  }
+
+  const fnObj = candidate.function && typeof candidate.function === 'object' ? candidate.function : candidate;
+  let rawName = fnObj.name || fnObj.tool || fnObj.tool_name || fnObj.function_name || candidate.name;
+  let rawArgs = fnObj.arguments !== undefined
+    ? fnObj.arguments
+    : fnObj.parameters !== undefined
+      ? fnObj.parameters
+      : fnObj.args !== undefined
+        ? fnObj.args
+        : fnObj.input !== undefined
+          ? fnObj.input
+          : undefined;
+
+  // Handle case where model forced a single function and emitted only the arguments object directly
+  if (!rawName && toolsConfig?.mode === 'function' && toolsConfig.forcedFunctionName) {
+    const forcedSchema = toolsConfig.toolMap.get(toolsConfig.forcedFunctionName)?.parameters;
+    const schemaProps = forcedSchema?.properties ? Object.keys(forcedSchema.properties) : [];
+    const candidateKeys = Object.keys(candidate);
+    if (schemaProps.length === 0 || candidateKeys.some(k => schemaProps.includes(k))) {
+      rawName = toolsConfig.forcedFunctionName;
+      rawArgs = candidate;
+    }
+  }
+
+  const canonicalName = resolveCanonicalToolName(rawName, toolsConfig);
+  if (!canonicalName) return [];
+
+  if (rawArgs === undefined) {
+    // If candidate has other keys besides name/type/id, treat remaining keys as arguments
+    const rest = {};
+    for (const [k, v] of Object.entries(fnObj)) {
+      if (!['name', 'tool', 'tool_name', 'function_name', 'type', 'id'].includes(k)) {
+        rest[k] = v;
+      }
+    }
+    rawArgs = rest;
+  }
+
+  const toolDef = toolsConfig?.toolMap?.get(canonicalName);
+  const coercedArgs = coerceToolArguments(rawArgs, toolDef?.parameters);
+  const callId = typeof candidate.id === 'string' && candidate.id.startsWith('call_')
+    ? candidate.id
+    : `call_${uuidv4().replace(/-/g, '').slice(0, 24)}`;
+
+  return [{
+    id: callId,
+    type: 'function',
+    function: {
+      name: canonicalName,
+      arguments: JSON.stringify(coercedArgs),
+    },
+  }];
+}
+
+function extractToolCallsFromText(rawText, toolsConfig) {
+  const text = typeof rawText === 'string' ? rawText : '';
+  if (!text || (toolsConfig && !toolsConfig.hasActiveTools)) {
+    return {
+      toolCalls: [],
+      cleanedContent: text,
+      hadMalformedToolAttempt: false,
+    };
+  }
+
+  const extractedCalls = [];
+  const spansToRemove = [];
+  let hadMalformedToolAttempt = false;
+
+  // 1. Match explicit <tool_call>...</tool_call> or <function_call>...</function_call> blocks
+  const xmlRegex = /<(?:tool_call|function_call|tool_use)>\s*([\s\S]*?)\s*<\/(?:tool_call|function_call|tool_use)>/gi;
+  let match;
+  while ((match = xmlRegex.exec(text)) !== null) {
+    spansToRemove.push([match.index, match.index + match[0].length]);
+    const inner = match[1].trim();
+    const parsed = repairJsonString(inner);
+    if (parsed) {
+      const normalized = normalizeParsedToolCandidate(parsed, toolsConfig);
+      if (normalized.length > 0) {
+        extractedCalls.push(...normalized);
+      } else {
+        hadMalformedToolAttempt = true;
+      }
+    } else {
+      hadMalformedToolAttempt = true;
+    }
+  }
+
+  // 2. Check for an unclosed trailing <tool_call> block (e.g., if model omitted closing tag)
+  if (extractedCalls.length === 0) {
+    const unclosedMatch = text.match(/<(?:tool_call|function_call|tool_use)>\s*([\s\S]+)$/i);
+    if (unclosedMatch && typeof unclosedMatch.index === 'number') {
+      const parsed = repairJsonString(unclosedMatch[1]);
+      if (parsed) {
+        const normalized = normalizeParsedToolCandidate(parsed, toolsConfig);
+        if (normalized.length > 0) {
+          extractedCalls.push(...normalized);
+          spansToRemove.push([unclosedMatch.index, text.length]);
+        } else {
+          hadMalformedToolAttempt = true;
+        }
+      } else {
+        hadMalformedToolAttempt = true;
+      }
+    }
+  }
+
+  // 3. Match Qwen / DeepSeek style <function=name>{...}</function>
+  if (extractedCalls.length === 0) {
+    const fnEqRegex = /<function=([a-zA-Z0-9_.-]+)>\s*([\s\S]*?)\s*<\/function>/gi;
+    while ((match = fnEqRegex.exec(text)) !== null) {
+      const fnName = match[1];
+      const argsParsed = repairJsonString(match[2]) || {};
+      const normalized = normalizeParsedToolCandidate({ name: fnName, arguments: argsParsed }, toolsConfig);
+      if (normalized.length > 0) {
+        extractedCalls.push(...normalized);
+        spansToRemove.push([match.index, match.index + match[0].length]);
+      }
+    }
+  }
+
+  // 4. Fallback: Fenced JSON blocks or standalone JSON objects matching a declared tool
+  if (extractedCalls.length === 0) {
+    const objects = extractBalancedJsonObjects(text);
+    for (const objInfo of objects) {
+      const parsed = repairJsonString(objInfo.raw);
+      if (!parsed || typeof parsed !== 'object') continue;
+      const normalized = normalizeParsedToolCandidate(parsed, toolsConfig);
+      if (normalized.length > 0) {
+        extractedCalls.push(...normalized);
+        spansToRemove.push([objInfo.start, objInfo.end]);
+      }
+    }
+  }
+
+  const finalCalls = toolsConfig && !toolsConfig.parallelToolCalls && extractedCalls.length > 1
+    ? [extractedCalls[0]]
+    : extractedCalls;
+
+  let cleanedContent = text;
+  if (spansToRemove.length > 0 && finalCalls.length > 0) {
+    const sorted = spansToRemove.slice().sort((a, b) => b[0] - a[0]);
+    for (const [start, end] of sorted) {
+      cleanedContent = cleanedContent.slice(0, start) + cleanedContent.slice(end);
+    }
+    // Strip leftover empty markdown fences around removed tool calls
+    cleanedContent = cleanedContent.replace(/```(?:json|xml|tool_call)?\s*```/gi, '').trim();
+  }
+
+  return {
+    toolCalls: finalCalls,
+    cleanedContent: cleanedContent.trim(),
+    hadMalformedToolAttempt,
+  };
+}
+
+function buildStreamingToolCallEvents(toolCalls, useLegacyFunctions = false) {
+  const events = [];
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return events;
+
+  if (useLegacyFunctions) {
+    const first = toolCalls[0];
+    events.push({
+      delta: {
+        role: 'assistant',
+        content: null,
+        function_call: {
+          name: first.function.name,
+          arguments: first.function.arguments,
+        },
+      },
+      finish_reason: null,
+    });
+    events.push({
+      delta: {},
+      finish_reason: 'function_call',
+    });
+    return events;
+  }
+
+  events.push({
+    delta: {
+      role: 'assistant',
+      content: null,
+      tool_calls: toolCalls.map((tc, index) => ({
+        index,
+        id: tc.id,
+        type: 'function',
+        function: {
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        },
+      })),
+    },
+    finish_reason: null,
+  });
+  events.push({
+    delta: {},
+    finish_reason: 'tool_calls',
+  });
+  return events;
 }
 
 async function getAttachmentBytes(attachment) {
@@ -1382,14 +2070,14 @@ async function handleImageGenerations(body, authHeader, env) {
   }
 
   const qwenRatio = mapOpenAiImageSizeToQwenRatio(body?.size);
-  // 创建 t2i 会话（失败自动换 token 重试）
+  // Create t2i session (automatically rotate token and retry on failure)
   const createdChat = await createChatSession(actualModel, 't2i');
   if (createdChat.statusCode) {
     return createdChat;
   }
   const { chatId, bxUa, bxUmidToken, bxV, cookies } = createdChat;
 
-  // 尽力把 n 映射给上游：上游未发现显式参数，只能通过 prompt 提示。
+  // Map n to upstream via prompt hint since upstream has no explicit count parameter
   const finalPrompt = n === 1 ? prompt : `${prompt}\n\n(Generate ${n} images.)`;
 
   const chatResp = await fetch(`${QWEN_BASE_URL}/api/v2/chat/completions?chat_id=${chatId}`, {
@@ -1498,6 +2186,148 @@ async function handleImageGenerations(body, authHeader, env) {
   }
 }
 
+async function sendUpstreamChatCompletionRequest({ chatId, bxUa, bxUmidToken, bxV, cookies, actualModel, chatType, enableSearch, content, uploadedFiles }) {
+  return fetch(`${QWEN_BASE_URL}/api/v2/chat/completions?chat_id=${chatId}`, {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'bx-ua': bxUa,
+      'bx-umidtoken': bxUmidToken,
+      'bx-v': bxV,
+      'Cookie': cookies,
+      'x-accel-buffering': 'no',
+      'Origin': QWEN_BASE_URL,
+      'source': 'web',
+      'version': '0.2.83',
+      'Referer': QWEN_GUEST_REFERER,
+      'User-Agent': WEB_USER_AGENT,
+      'Accept-Language': WEB_ACCEPT_LANGUAGE,
+      'x-request-id': uuidv4(),
+    },
+    body: JSON.stringify({
+      stream: true,
+      version: '2.1',
+      incremental_output: true,
+      chat_id: chatId,
+      chat_mode: 'guest',
+      model: actualModel,
+      parent_id: null,
+      messages: [{
+        id: null,
+        fid: uuidv4(),
+        parentId: null,
+        childrenIds: [uuidv4()],
+        role: 'user',
+        content,
+        user_action: 'chat',
+        files: uploadedFiles,
+        timestamp: Date.now(),
+        models: [actualModel],
+        model: '',
+        chat_type: chatType,
+        feature_config: {
+          thinking_enabled: true,
+          output_schema: 'phase',
+          research_mode: 'normal',
+          auto_thinking: true,
+          thinking_mode: 'Auto',
+          thinking_format: 'summary',
+          auto_search: enableSearch,
+        },
+        extra: { meta: { subChatType: chatType } },
+        sub_chat_type: chatType,
+        parent_id: null,
+      }],
+      timestamp: Date.now(),
+    }),
+  });
+}
+
+async function collectUpstreamSseBuffer(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+  }
+  return buffer;
+}
+
+function buildFinalCompletionPayload({ responseId, created, actualModel, parsedSse, toolsConfig, stream }) {
+  const toolExtraction = toolsConfig && toolsConfig.hasActiveTools
+    ? extractToolCallsFromText(parsedSse.content, toolsConfig)
+    : { toolCalls: [], cleanedContent: parsedSse.content, hadMalformedToolAttempt: false };
+
+  const hasToolCalls = toolExtraction.toolCalls.length > 0;
+
+  if (stream) {
+    const events = [];
+    if (parsedSse.reasoning_content) {
+      events.push({
+        delta: { role: 'assistant', reasoning_content: parsedSse.reasoning_content },
+        finish_reason: null,
+      });
+    }
+    if (hasToolCalls) {
+      if (toolExtraction.cleanedContent) {
+        events.push({
+          delta: { role: 'assistant', content: toolExtraction.cleanedContent },
+          finish_reason: null,
+        });
+      }
+      events.push(...buildStreamingToolCallEvents(toolExtraction.toolCalls, toolsConfig.useLegacyFunctions));
+    } else {
+      for (const ev of parsedSse.events) {
+        if (ev.delta?.reasoning_content && parsedSse.reasoning_content) continue;
+        events.push(ev);
+      }
+      if (events.length === 0 || events[events.length - 1].finish_reason === null) {
+        events.push({ delta: {}, finish_reason: 'stop' });
+      }
+    }
+    const streamBody = events.map((event) => `data: ${JSON.stringify({
+      id: responseId,
+      object: 'chat.completion.chunk',
+      created,
+      model: actualModel,
+      choices: [{ index: 0, delta: event.delta, finish_reason: event.finish_reason || null }],
+    })}\n\n`).join('') + 'data: [DONE]\n\n';
+    return createStreamResponse(streamBody);
+  }
+
+  const messageObj = {
+    role: 'assistant',
+    content: hasToolCalls ? (toolExtraction.cleanedContent || null) : parsedSse.content,
+    ...(parsedSse.reasoning_content ? { reasoning_content: parsedSse.reasoning_content } : {}),
+  };
+
+  let finishReason = 'stop';
+  if (hasToolCalls) {
+    if (toolsConfig.useLegacyFunctions) {
+      messageObj.function_call = {
+        name: toolExtraction.toolCalls[0].function.name,
+        arguments: toolExtraction.toolCalls[0].function.arguments,
+      };
+      finishReason = 'function_call';
+    } else {
+      messageObj.tool_calls = toolExtraction.toolCalls;
+      finishReason = 'tool_calls';
+    }
+  }
+
+  return createResponse({
+    id: responseId,
+    object: 'chat.completion',
+    created,
+    model: actualModel,
+    choices: [{ index: 0, message: messageObj, finish_reason: finishReason }],
+    usage: mapUsageToOpenAI(parsedSse.usage),
+  });
+}
+
 async function handleChatCompletions(body, authHeader, env, streamWriter) {
   logChatDetail('core', 'request.entry', {
     hasAuthHeader: !!authHeader,
@@ -1510,35 +2340,40 @@ async function handleChatCompletions(body, authHeader, env, streamWriter) {
     return createResponse({ error: { message: 'Incorrect API key provided.', type: 'invalid_request_error' } }, 401);
   }
 
-  const { model, messages, stream = false, tools } = body;
+  const { model, messages, stream = false } = body;
   if (!messages?.length) {
     logChatDetail('core', 'request.validation.failed', { reason: 'Messages are required' });
     return createResponse({ error: { message: 'Messages are required', type: 'invalid_request_error' } }, 400);
   }
 
+  const toolsConfig = normalizeToolsConfig(body);
+
   logChatDetail('core', 'request.received', {
     stream: !!stream,
     model: model || 'qwen3.8-max',
     messageCount: Array.isArray(messages) ? messages.length : 0,
-    hasTools: !!(tools && Array.isArray(tools) && tools.length > 0),
+    hasTools: toolsConfig.hasActiveTools,
+    toolCount: toolsConfig.tools.length,
+    toolChoiceMode: toolsConfig.mode,
   });
 
   const actualModel = model || 'qwen3.8-max';
 
-  // 检查是否启用搜索
-  const enableSearch = (env?.ENABLE_SEARCH || (typeof process !== 'undefined' && process.env && process.env.ENABLE_SEARCH) || '').toLowerCase() === 'true';
+  // Disable upstream web search when active tools are present so it doesn't interfere with tool calling
+  const rawEnableSearch = (env?.ENABLE_SEARCH || (typeof process !== 'undefined' && process.env && process.env.ENABLE_SEARCH) || '').toLowerCase() === 'true';
+  const enableSearch = toolsConfig.hasActiveTools ? false : rawEnableSearch;
   const chatType = enableSearch ? 'search' : 't2t';
   logChatDetail('core', 'request.config', { actualModel, chatType, enableSearch });
 
-  // 创建会话（失败自动换 token 重试）
+  // Create chat session (automatically rotate token and retry on failure)
   const createdChat = await createChatSession(actualModel, chatType);
   if (createdChat.statusCode) {
     return createdChat;
   }
   const { chatId, bxUa, bxUmidToken, bxV, cookies } = createdChat;
 
-  // 解析 OpenAI 兼容消息与附件
-  const parsedMessages = parseIncomingMessages(messages);
+  // Parse OpenAI-compatible messages, tool history, and attachments
+  const parsedMessages = parseIncomingMessages(messages, toolsConfig);
   const content = parsedMessages.content;
   logChatDetail('core', 'message.parsed', {
     contentLength: content.length,
@@ -1551,31 +2386,18 @@ async function handleChatCompletions(body, authHeader, env, streamWriter) {
     uploadedFileCount: uploadedFiles.length,
   });
 
-  // 发送请求
-  const chatResp = await fetch(`${QWEN_BASE_URL}/api/v2/chat/completions?chat_id=${chatId}`, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json', 'Content-Type': 'application/json',
-      'bx-ua': bxUa, 'bx-umidtoken': bxUmidToken, 'bx-v': bxV,
-      'Cookie': cookies,
-      'x-accel-buffering': 'no',
-      'Origin': QWEN_BASE_URL,
-      'source': 'web', 'version': '0.2.83', 'Referer': QWEN_GUEST_REFERER,
-      'User-Agent': WEB_USER_AGENT,
-      'Accept-Language': WEB_ACCEPT_LANGUAGE,
-      'x-request-id': uuidv4()
-    },
-    body: JSON.stringify({
-      stream: true, version: '2.1', incremental_output: true,
-      chat_id: chatId, chat_mode: 'guest', model: actualModel, parent_id: null,
-      messages: [{
-        id: null, fid: uuidv4(), parentId: null, childrenIds: [uuidv4()], role: 'user', content,
-        user_action: 'chat', files: uploadedFiles, timestamp: Date.now(), models: [actualModel], model: '', chat_type: chatType,
-        feature_config: { thinking_enabled: true, output_schema: 'phase', research_mode: 'normal', auto_thinking: true, thinking_mode: 'Auto', thinking_format: 'summary', auto_search: enableSearch },
-        extra: { meta: { subChatType: chatType } }, sub_chat_type: chatType, parent_id: null
-      }],
-      timestamp: Date.now()
-    })
+  // Send request to upstream Qwen API
+  const chatResp = await sendUpstreamChatCompletionRequest({
+    chatId,
+    bxUa,
+    bxUmidToken,
+    bxV,
+    cookies,
+    actualModel,
+    chatType,
+    enableSearch,
+    content,
+    uploadedFiles,
   });
 
   if (!chatResp.ok) {
@@ -1590,27 +2412,69 @@ async function handleChatCompletions(body, authHeader, env, streamWriter) {
   const responseId = `chatcmpl-${uuidv4()}`;
   const created = Math.floor(Date.now() / 1000);
 
-  // 如果有流写入器 (Express)，使用真正的流式
-  if (streamWriter && stream) {
+  // If an Express/Vercel streamWriter is provided and tool_choice does not require a retry check, stream directly
+  if (streamWriter && stream && !(toolsConfig.hasActiveTools && (toolsConfig.mode === 'required' || toolsConfig.mode === 'function'))) {
     logChatDetail('core', 'stream.proxy.express', { chatId, model: actualModel });
-    return streamWriter(chatResp, actualModel, responseId, created);
+    return streamWriter(chatResp, actualModel, responseId, created, toolsConfig);
   }
 
-  // 默认：收集完整响应
-  const reader = chatResp.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-  }
-  const upstreamErr = tryParseUpstreamErrorPayload(buffer);
+  // Collect full response (and perform self-correction retry if a required tool call was missed or malformed)
+  let buffer = await collectUpstreamSseBuffer(chatResp);
+  let upstreamErr = tryParseUpstreamErrorPayload(buffer);
   if (upstreamErr) {
     console.log(`[qwen2api][chat] Upstream returned error (HTTP 200): ${upstreamErr.message}`);
     return createResponse({ error: upstreamErr }, 502);
   }
-  const parsedSse = parseQwenSsePayload(buffer);
+  let parsedSse = parseQwenSsePayload(buffer);
+
+  if (toolsConfig.hasActiveTools) {
+    const initialExtraction = extractToolCallsFromText(parsedSse.content, toolsConfig);
+    const needsRetry = initialExtraction.toolCalls.length === 0 && (
+      toolsConfig.mode === 'required' ||
+      toolsConfig.mode === 'function' ||
+      initialExtraction.hadMalformedToolAttempt
+    );
+
+    if (needsRetry) {
+      logChatDetail('core', 'tool_call.retry.start', {
+        mode: toolsConfig.mode,
+        forcedFunctionName: toolsConfig.forcedFunctionName,
+        hadMalformedToolAttempt: initialExtraction.hadMalformedToolAttempt,
+      });
+      const retrySession = await createChatSession(actualModel, chatType);
+      if (!retrySession.statusCode) {
+        const targetHint = toolsConfig.forcedFunctionName
+          ? `You MUST call the function "${toolsConfig.forcedFunctionName}".`
+          : `You MUST call one of these functions: ${Array.from(toolsConfig.toolMap.keys()).join(', ')}.`;
+        const retryContent = `${content}\n\n[Assistant]: ${parsedSse.content || '(invalid output)'}\n\n[System Correction]: Your previous response did not contain a valid <tool_call> block. ${targetHint} Respond ONLY with:\n<tool_call>\n{"name": "${toolsConfig.forcedFunctionName || Array.from(toolsConfig.toolMap.keys())[0]}", "arguments": {...}}\n</tool_call>`;
+        const retryResp = await sendUpstreamChatCompletionRequest({
+          chatId: retrySession.chatId,
+          bxUa: retrySession.bxUa,
+          bxUmidToken: retrySession.bxUmidToken,
+          bxV: retrySession.bxV,
+          cookies: retrySession.cookies,
+          actualModel,
+          chatType,
+          enableSearch,
+          content: retryContent,
+          uploadedFiles,
+        });
+        if (retryResp.ok) {
+          const retryBuffer = await collectUpstreamSseBuffer(retryResp);
+          const retryErr = tryParseUpstreamErrorPayload(retryBuffer);
+          if (!retryErr) {
+            const retryParsed = parseQwenSsePayload(retryBuffer);
+            const retryExtraction = extractToolCallsFromText(retryParsed.content, toolsConfig);
+            if (retryExtraction.toolCalls.length > 0) {
+              parsedSse = retryParsed;
+              logChatDetail('core', 'tool_call.retry.succeeded', { count: retryExtraction.toolCalls.length });
+            }
+          }
+        }
+      }
+    }
+  }
+
   logChatDetail('core', 'chat.completion.collected', {
     chunkCount: parsedSse.events.length,
     outputLength: parsedSse.content.length,
@@ -1620,20 +2484,31 @@ async function handleChatCompletions(body, authHeader, env, streamWriter) {
     content: parsedSse.content,
   });
 
-  if (stream) {
-    logChatDetail('core', 'stream.repack.start', { chunkCount: parsedSse.events.length });
-    const streamBody = parsedSse.events.map((event) => `data: ${JSON.stringify({
-      id: responseId, object: 'chat.completion.chunk', created, model: actualModel,
-      choices: [{ index: 0, delta: event.delta, finish_reason: event.finish_reason || null }]
-    })}\n\n`).join('') + 'data: [DONE]\n\n';
-    logChatDetail('core', 'stream.repack.done', { responseId });
-    return createStreamResponse(streamBody);
+  // If streaming via Express streamWriter after a required-tool buffer/retry, write the SSE payload to streamWriter
+  if (streamWriter && stream) {
+    const streamRes = buildFinalCompletionPayload({
+      responseId,
+      created,
+      actualModel,
+      parsedSse,
+      toolsConfig,
+      stream: true,
+    });
+    // Create a synthetic Response with the repacked SSE stream so streamWriter can flush it
+    const syntheticResp = new Response(streamRes.body, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+    return streamWriter(syntheticResp, actualModel, responseId, created, null);
   }
 
-  return createResponse({
-    id: responseId, object: 'chat.completion', created, model: actualModel,
-    choices: [{ index: 0, message: { role: 'assistant', content: parsedSse.content, ...(parsedSse.reasoning_content ? { reasoning_content: parsedSse.reasoning_content } : {}) }, finish_reason: 'stop' }],
-    usage: mapUsageToOpenAI(parsedSse.usage)
+  return buildFinalCompletionPayload({
+    responseId,
+    created,
+    actualModel,
+    parsedSse,
+    toolsConfig,
+    stream: !!stream,
   });
 }
 
@@ -1642,7 +2517,7 @@ function handleRoot() {
   return createResponse(html, 200, { 'Content-Type': 'text/html' });
 }
 
-// Chat HTML 缓存 (开发模式禁用缓存)
+// Chat HTML cache (disabled in development when disk is readable)
 let chatHtmlCache = null;
 
 function getChatHtml() {
@@ -1651,15 +2526,15 @@ function getChatHtml() {
   if (fs && path) {
     try {
       const htmlPath = path.join(__dirname, 'chat.html');
-      // 开发模式下每次都重新读取文件（本地/磁盘可读时以文件为准）
+      // Always re-read file in development mode when disk is accessible
       chatHtmlCache = fs.readFileSync(htmlPath, 'utf-8');
       return chatHtmlCache;
     } catch {
-      // 函数打包环境（Vercel/Netlify）读不到 chat.html，落到下方内联副本
+      // Serverless bundle environments (Vercel/Netlify) cannot read chat.html directly; fall back to inlined copy below
     }
   }
-  // 兜底：chat-html.js 是构建脚本从 chat.html 生成的内联副本，
-  // esbuild 会把它静态打包进所有平台（本地、Vercel、Netlify、CF Workers）。
+  // Fallback: chat-html.js is an inlined copy generated from chat.html by the build script,
+  // statically bundled by esbuild across all platforms (Local, Vercel, Netlify, CF Workers).
   return require('./chat-html.js');
 }
 
@@ -1669,7 +2544,7 @@ function handleChatPage() {
 }
 
 // ============================================
-// 视频下载 (yt-dlp)
+// Video Download (yt-dlp)
 // ============================================
 
 let ytdlpEnsurePromise = null;
@@ -1853,7 +2728,7 @@ async function downloadVideoWithYtDlp(videoUrl, sendLog, preferredResolution) {
   }
   const { spawn } = childProcess;
 
-  // 从环境变量获取最低分辨率，默认 480p
+  // Read minimum resolution from environment or request, default 480p
   const resolutionInfo = getEffectiveMinResolution(preferredResolution);
   const minResolution = resolutionInfo.minResolution;
 
@@ -1865,8 +2740,8 @@ async function downloadVideoWithYtDlp(videoUrl, sendLog, preferredResolution) {
 
     const outputFile = path.join(tmpDir, `video_${Date.now()}.mp4`);
     
-    // 格式选择：优先选不高于目标高度的可用流，避免精确高度导致部分站点误判“格式不可用”
-    // 兜底链：<=目标高度的视频音频分离 -> <=目标高度的单文件 -> 任意可用分离流 -> 任意 best
+    // Format selection: prefer available streams up to target height to avoid "format not available" errors
+    // Fallback chain: <=target height separate video+audio -> <=target height single file -> any separate stream -> best
     const formatSelector = `bestvideo[height<=${minResolution}][vcodec!=none][acodec=none]+bestaudio[acodec!=none]/best[height<=${minResolution}]/bestvideo[vcodec!=none][acodec=none]+bestaudio[acodec!=none]/best`;
 
     sendLog('video.download.running', {
@@ -1895,7 +2770,7 @@ async function downloadVideoWithYtDlp(videoUrl, sendLog, preferredResolution) {
       
       ytdlp.stderr.on('data', (data) => {
         stderr += data.toString();
-        // 解析下载进度
+        // Parse download progress
         const progressMatch = stderr.match(/(\d+\.?\d*)%/);
         if (progressMatch) {
           sendLog('video.download.progress', { progress: progressMatch[1] + '%' });
@@ -1904,7 +2779,7 @@ async function downloadVideoWithYtDlp(videoUrl, sendLog, preferredResolution) {
 
       ytdlp.on('close', (code) => {
         if (code !== 0) {
-          // 失败时清理临时文件
+          // Clean up temp file on failure
           try {
             if (fs.existsSync(outputFile)) {
               fs.unlinkSync(outputFile);
@@ -1930,19 +2805,19 @@ async function downloadVideoWithYtDlp(videoUrl, sendLog, preferredResolution) {
             sizeMB: sizeMB + ' MB'
           });
 
-          // 创建附件对象，格式与网页上传的一致
+          // Create attachment object matching web upload format
           const base64 = bytes.toString('base64');
           const dataUrl = `data:video/mp4;base64,${base64}`;
           
-        const attachment = {
-          source: dataUrl,
-          filename: path.basename(outputFile),
-          mimeType: 'video/mp4',
-          explicitType: 'video',
-          size: stats.size,
-          sizeMB: sizeMB + ' MB',
-          _tempFilePath: outputFile, // 保留临时文件路径，后续删除
-        };
+          const attachment = {
+            source: dataUrl,
+            filename: path.basename(outputFile),
+            mimeType: 'video/mp4',
+            explicitType: 'video',
+            size: stats.size,
+            sizeMB: sizeMB + ' MB',
+            _tempFilePath: outputFile, // Keep temporary file path for subsequent cleanup
+          };
 
           resolve(attachment);
         } catch (err) {
@@ -1951,7 +2826,7 @@ async function downloadVideoWithYtDlp(videoUrl, sendLog, preferredResolution) {
       });
 
       ytdlp.on('error', (err) => {
-        // 错误时清理临时文件
+        // Clean up temp file on error
         try {
           if (fs.existsSync(outputFile)) {
             fs.unlinkSync(outputFile);
@@ -1973,22 +2848,64 @@ async function downloadVideoWithYtDlp(videoUrl, sendLog, preferredResolution) {
 }
 
 // ============================================
-// 带日志流式返回的 Chat Completions
+// Streaming Chat Completions with Logs
 // ============================================
 
 function createLogStreamWriter(writer, onDone = null) {
-  // writer 是一个对象，包含 write/log/end 方法
-  return async (response, model, responseId, created, logStream) => {
+  // writer is an object containing write/log/end methods
+  return async (response, model, responseId, created, toolsConfig = null) => {
     const reader = response.body?.getReader ? response.body.getReader() : null;
     const decoder = new TextDecoder();
     let buffer = '';
     let doneWritten = false;
     let anyChunkWritten = false;
     let nonDataBuffer = '';
+    const hasActiveTools = !!(toolsConfig && toolsConfig.hasActiveTools);
+    const answerBufferParts = [];
 
     if (!reader) {
       throw new Error('Upstream response has no readable body');
     }
+
+    const flushToolAwareAnswer = () => {
+      if (!hasActiveTools) return;
+      const fullAnswer = answerBufferParts.join('');
+      const extraction = extractToolCallsFromText(fullAnswer, toolsConfig);
+      if (extraction.toolCalls.length > 0) {
+        if (extraction.cleanedContent) {
+          const textChunk = {
+            id: responseId,
+            object: 'chat.completion.chunk',
+            created,
+            model,
+            choices: [{ index: 0, delta: { role: 'assistant', content: extraction.cleanedContent }, finish_reason: null }],
+          };
+          writer.write(`data: ${JSON.stringify(textChunk)}\n\n`);
+        }
+        const toolEvents = buildStreamingToolCallEvents(extraction.toolCalls, toolsConfig.useLegacyFunctions);
+        for (const ev of toolEvents) {
+          const tcChunk = {
+            id: responseId,
+            object: 'chat.completion.chunk',
+            created,
+            model,
+            choices: [{ index: 0, delta: ev.delta, finish_reason: ev.finish_reason }],
+          };
+          writer.write(`data: ${JSON.stringify(tcChunk)}\n\n`);
+        }
+        anyChunkWritten = true;
+      } else if (fullAnswer) {
+        const textChunk = {
+          id: responseId,
+          object: 'chat.completion.chunk',
+          created,
+          model,
+          choices: [{ index: 0, delta: { role: 'assistant', content: fullAnswer }, finish_reason: 'stop' }],
+        };
+        writer.write(`data: ${JSON.stringify(textChunk)}\n\n`);
+        anyChunkWritten = true;
+      }
+    };
 
     try {
       while (true) {
@@ -2007,6 +2924,7 @@ function createLogStreamWriter(writer, onDone = null) {
           }
           const data = trimmed.slice(5).trim();
           if (data === '[DONE]') {
+            flushToolAwareAnswer();
             writer.write('data: [DONE]\n\n');
             doneWritten = true;
             continue;
@@ -2016,8 +2934,8 @@ function createLogStreamWriter(writer, onDone = null) {
             const parsed = JSON.parse(data);
             if (parsed?.error) {
               const upstreamError = typeof parsed.error === 'string' ? { message: parsed.error } : parsed.error;
-              const errorMsg = upstreamError.message || upstreamError.details || '请求失败';
-              // 内容安全警告作为正常输出而不是错误
+              const errorMsg = upstreamError.message || upstreamError.details || 'Request failed';
+              // Surface content safety warnings as normal assistant output instead of errors
               if (upstreamError.code === 'data_inspection_failed' || upstreamError.details) {
                 const warningChunk = {
                   id: responseId,
@@ -2047,7 +2965,33 @@ function createLogStreamWriter(writer, onDone = null) {
               continue;
             }
 
-            const delta = mapUpstreamDeltaToOpenAI(parsed?.choices?.[0]?.delta);
+            // Pass through pre-formatted OpenAI tool_calls chunks (from synthetic retry stream)
+            const rawDelta = parsed?.choices?.[0]?.delta;
+            if (rawDelta && (rawDelta.tool_calls || rawDelta.function_call)) {
+              writer.write(`data: ${JSON.stringify(parsed)}\n\n`);
+              anyChunkWritten = true;
+              continue;
+            }
+
+            const delta = mapUpstreamDeltaToOpenAI(rawDelta);
+            if (hasActiveTools) {
+              if (delta?.reasoning_content) {
+                const rChunk = {
+                  id: responseId,
+                  object: 'chat.completion.chunk',
+                  created,
+                  model,
+                  choices: [{ index: 0, delta: { role: 'assistant', reasoning_content: delta.reasoning_content }, finish_reason: null }],
+                };
+                writer.write(`data: ${JSON.stringify(rChunk)}\n\n`);
+                anyChunkWritten = true;
+              }
+              if (typeof delta?.content === 'string' && delta.content) {
+                answerBufferParts.push(delta.content);
+              }
+              continue;
+            }
+
             if (delta || parsed?.choices?.[0]?.finish_reason) {
               const chunk = {
                 id: responseId,
@@ -2069,6 +3013,9 @@ function createLogStreamWriter(writer, onDone = null) {
       if (buffer.trim() && !buffer.trimStart().startsWith('data:')) {
         nonDataBuffer += buffer;
       }
+      if (!doneWritten && hasActiveTools && answerBufferParts.length > 0) {
+        flushToolAwareAnswer();
+      }
       if (!doneWritten && !anyChunkWritten) {
         const err = tryParseUpstreamErrorPayload(nonDataBuffer);
         if (err) {
@@ -2085,7 +3032,7 @@ function createLogStreamWriter(writer, onDone = null) {
         writer.write('data: [DONE]\n\n');
       }
       writer.end();
-      // 执行清理回调
+      // Execute cleanup callback
       if (onDone) {
         try {
           onDone();
@@ -2102,19 +3049,21 @@ async function handleChatCompletionsWithLogs(body, authHeader, env, streamWriter
     hasMessages: !!body?.messages,
   });
 
-  // 验证 token
+  // Validate token
   if (!validateToken(authHeader, env)) {
     logChatDetail('core', 'request.auth.failed', {});
     return createResponse({ error: { message: 'Incorrect API key provided.', type: 'invalid_request_error' } }, 401);
   }
 
-  const { model, messages, stream = false, tools } = body;
+  const { model, messages, stream = false } = body;
   if (!messages?.length) {
     logChatDetail('core', 'request.validation.failed', { reason: 'Messages are required' });
     return createResponse({ error: { message: 'Messages are required', type: 'invalid_request_error' } }, 400);
   }
 
-  // 日志辅助函数
+  const toolsConfig = normalizeToolsConfig(body);
+
+  // Log helper
   const sendLog = (event, detail = {}) => {
     const logData = JSON.stringify({ event, timestamp: Date.now(), ...detail });
     if (streamWriter && streamWriter.log) {
@@ -2126,19 +3075,25 @@ async function handleChatCompletionsWithLogs(body, authHeader, env, streamWriter
     stream: !!stream,
     model: model || 'qwen3.8-max',
     messageCount: Array.isArray(messages) ? messages.length : 0,
-    hasTools: !!(tools && Array.isArray(tools) && tools.length > 0),
+    hasTools: toolsConfig.hasActiveTools,
   });
-  sendLog('request.received', { model: model || 'qwen3.8-max', messageCount: messages.length });
+  sendLog('request.received', {
+    model: model || 'qwen3.8-max',
+    messageCount: messages.length,
+    hasTools: toolsConfig.hasActiveTools,
+    toolCount: toolsConfig.tools.length,
+  });
 
   const actualModel = model || 'qwen3.8-max';
 
-  // 检查是否启用搜索
-  const enableSearch = (env?.ENABLE_SEARCH || (typeof process !== 'undefined' && process.env && process.env.ENABLE_SEARCH) || '').toLowerCase() === 'true';
+  // Check if web search is enabled (disabled when active tools are configured)
+  const rawEnableSearch = (env?.ENABLE_SEARCH || (typeof process !== 'undefined' && process.env && process.env.ENABLE_SEARCH) || '').toLowerCase() === 'true';
+  const enableSearch = toolsConfig.hasActiveTools ? false : rawEnableSearch;
   const chatType = enableSearch ? 'search' : 't2t';
   logChatDetail('core', 'request.config', { actualModel, chatType, enableSearch });
   sendLog('config.ready', { model: actualModel, chatType, enableSearch });
 
-  // 创建会话（失败自动换 token 重试）
+  // Create chat session (automatically rotate token and retry on failure)
   sendLog('chat.creating', {});
   const createdChat = await createChatSession(actualModel, chatType);
   if (createdChat.statusCode) {
@@ -2148,8 +3103,8 @@ async function handleChatCompletionsWithLogs(body, authHeader, env, streamWriter
   const { chatId, bxUa, bxUmidToken, bxV, cookies } = createdChat;
   sendLog('chat.created', { chatId });
 
-  // 解析消息与附件
-  const parsedMessages = parseIncomingMessages(messages);
+  // Parse messages and attachments
+  const parsedMessages = parseIncomingMessages(messages, toolsConfig);
   const content = parsedMessages.content;
   logChatDetail('core', 'message.parsed', {
     contentLength: content.length,
@@ -2157,10 +3112,10 @@ async function handleChatCompletionsWithLogs(body, authHeader, env, streamWriter
   });
   sendLog('message.parsed', { contentLength: content.length, attachmentCount: parsedMessages.attachments.length });
 
-  // 临时文件路径收集（用于后续清理）
+  // Collect temporary file paths for subsequent cleanup
   const tempFilesToClean = [];
 
-  // 处理视频链接下载
+  // Handle video URL download
   const videoUrl = body.video_url;
   const preferredResolution = body?.min_video_resolution;
   if (videoUrl) {
@@ -2172,7 +3127,7 @@ async function handleChatCompletionsWithLogs(body, authHeader, env, streamWriter
       const videoAttachment = await downloadVideoWithYtDlp(videoUrl, sendLog, preferredResolution);
       if (videoAttachment) {
         parsedMessages.attachments.push(videoAttachment);
-        // 记录临时文件路径
+        // Record temporary file path
         if (videoAttachment._tempFilePath) {
           tempFilesToClean.push(videoAttachment._tempFilePath);
         }
@@ -2194,7 +3149,7 @@ async function handleChatCompletionsWithLogs(body, authHeader, env, streamWriter
     }
   }
 
-  // 上传附件
+  // Upload attachments
   let uploadedFiles = [];
   if (parsedMessages.attachments.length > 0) {
     sendLog('attachments.upload.start', { count: parsedMessages.attachments.length });
@@ -2233,32 +3188,19 @@ async function handleChatCompletionsWithLogs(body, authHeader, env, streamWriter
     uploadedFileCount: uploadedFiles.length,
   });
 
-  // 发送请求
+  // Send request
   sendLog('chat.sending', { chatId });
-  const chatResp = await fetch(`${QWEN_BASE_URL}/api/v2/chat/completions?chat_id=${chatId}`, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json', 'Content-Type': 'application/json',
-      'bx-ua': bxUa, 'bx-umidtoken': bxUmidToken, 'bx-v': bxV,
-      'Cookie': cookies,
-      'x-accel-buffering': 'no',
-      'Origin': QWEN_BASE_URL,
-      'source': 'web', 'version': '0.2.83', 'Referer': QWEN_GUEST_REFERER,
-      'User-Agent': WEB_USER_AGENT,
-      'Accept-Language': WEB_ACCEPT_LANGUAGE,
-      'x-request-id': uuidv4()
-    },
-    body: JSON.stringify({
-      stream: true, version: '2.1', incremental_output: true,
-      chat_id: chatId, chat_mode: 'guest', model: actualModel, parent_id: null,
-      messages: [{
-        id: null, fid: uuidv4(), parentId: null, childrenIds: [uuidv4()], role: 'user', content,
-        user_action: 'chat', files: uploadedFiles, timestamp: Date.now(), models: [actualModel], model: '', chat_type: chatType,
-        feature_config: { thinking_enabled: true, output_schema: 'phase', research_mode: 'normal', auto_thinking: true, thinking_mode: 'Auto', thinking_format: 'summary', auto_search: enableSearch },
-        extra: { meta: { subChatType: chatType } }, sub_chat_type: chatType, parent_id: null
-      }],
-      timestamp: Date.now()
-    })
+  const chatResp = await sendUpstreamChatCompletionRequest({
+    chatId,
+    bxUa,
+    bxUmidToken,
+    bxV,
+    cookies,
+    actualModel,
+    chatType,
+    enableSearch,
+    content,
+    uploadedFiles,
   });
 
   if (!chatResp.ok) {
@@ -2276,7 +3218,7 @@ async function handleChatCompletionsWithLogs(body, authHeader, env, streamWriter
   const responseId = `chatcmpl-${uuidv4()}`;
   const created = Math.floor(Date.now() / 1000);
 
-  // 清理临时视频文件的函数
+  // Function to clean up temporary video files
   const cleanupTempFiles = () => {
     const fs = nodeRequire('fs');
     if (!fs) return;
@@ -2290,26 +3232,20 @@ async function handleChatCompletionsWithLogs(body, authHeader, env, streamWriter
     }
   };
 
-  // 如果有流写入器，使用流式处理
-  if (streamWriter && stream) {
+  // If streamWriter is provided, use streaming handler
+  if (streamWriter && stream && !(toolsConfig.hasActiveTools && (toolsConfig.mode === 'required' || toolsConfig.mode === 'function'))) {
     logChatDetail('core', 'stream.proxy.express', { chatId, model: actualModel });
     const logAwareWriter = createLogStreamWriter(streamWriter, cleanupTempFiles);
-    return logAwareWriter(chatResp, actualModel, responseId, created);
+    return logAwareWriter(chatResp, actualModel, responseId, created, toolsConfig);
   }
 
-  // 非 Express 环境：收集完整响应
-  const reader = chatResp.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-  }
+  // Non-Express or required tool verification: collect full response
+  const buffer = await collectUpstreamSseBuffer(chatResp);
   const upstreamErr = tryParseUpstreamErrorPayload(buffer);
   if (upstreamErr) {
     console.log(`[qwen2api][chat-log] Upstream returned error (HTTP 200): ${upstreamErr.message}`);
     sendLog('chat.response.failed', { error: upstreamErr.message });
+    cleanupTempFiles();
     return createResponse({ error: upstreamErr }, 502);
   }
   const parsedSse = parseQwenSsePayload(buffer);
@@ -2324,34 +3260,44 @@ async function handleChatCompletionsWithLogs(body, authHeader, env, streamWriter
   });
   sendLog('chat.completed', { outputLength: parsedSse.content.length });
 
-  // 清理临时视频文件
+  // Clean up temporary video files
   cleanupTempFiles();
 
-  if (stream) {
-    logChatDetail('core', 'stream.repack.start', { chunkCount: parsedSse.events.length });
-    const streamBody = parsedSse.events.map((event) => `data: ${JSON.stringify({
-      id: responseId, object: 'chat.completion.chunk', created, model: actualModel,
-      choices: [{ index: 0, delta: event.delta, finish_reason: event.finish_reason || null }]
-    })}\n\n`).join('') + 'data: [DONE]\n\n';
-    logChatDetail('core', 'stream.repack.done', { responseId });
-    return createStreamResponse(streamBody);
+  if (streamWriter && stream) {
+    const streamRes = buildFinalCompletionPayload({
+      responseId,
+      created,
+      actualModel,
+      parsedSse,
+      toolsConfig,
+      stream: true,
+    });
+    const syntheticResp = new Response(streamRes.body, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+    const logAwareWriter = createLogStreamWriter(streamWriter, null);
+    return logAwareWriter(syntheticResp, actualModel, responseId, created, null);
   }
 
-  return createResponse({
-    id: responseId, object: 'chat.completion', created, model: actualModel,
-    choices: [{ index: 0, message: { role: 'assistant', content: parsedSse.content, ...(parsedSse.reasoning_content ? { reasoning_content: parsedSse.reasoning_content } : {}) }, finish_reason: 'stop' }],
-    usage: mapUsageToOpenAI(parsedSse.usage)
+  return buildFinalCompletionPayload({
+    responseId,
+    created,
+    actualModel,
+    parsedSse,
+    toolsConfig,
+    stream: !!stream,
   });
 }
 
 // ============================================
-// 流式响应写入器（Express / Vercel Node 共用）
+// Streaming Response Writer (shared by Express / Vercel Node)
 // ============================================
 
-// 通用 SSE 流写入器：把上游 SSE 实时转成 OpenAI 格式并写入 res
-// （res 只需支持 setHeader / write / end / writableEnded，Express 与 Vercel Node 均满足）
+// Generic SSE stream writer: converts upstream SSE into OpenAI format in real time and writes to res
+// (res only needs setHeader / write / end / writableEnded, supported by both Express and Vercel Node)
 function createExpressStreamHandler(res) {
-  return async (response, model, responseId, created) => {
+  return async (response, model, responseId, created, toolsConfig = null) => {
     const rawFlag = (typeof process !== 'undefined' && process.env && process.env.CHAT_DETAIL_LOG) || '';
     const debugEnabled = ['1', 'true', 'yes', 'on'].includes(String(rawFlag).toLowerCase());
     let hasStreamContent = false;
@@ -2375,6 +3321,50 @@ function createExpressStreamHandler(res) {
     let doneWritten = false;
     let anyChunkWritten = false;
     let nonDataBuffer = '';
+    const hasActiveTools = !!(toolsConfig && toolsConfig.hasActiveTools);
+    const answerBufferParts = [];
+
+    const flushToolAwareAnswer = () => {
+      if (!hasActiveTools || res.writableEnded) return;
+      const fullAnswer = answerBufferParts.join('');
+      const extraction = extractToolCallsFromText(fullAnswer, toolsConfig);
+      if (extraction.toolCalls.length > 0) {
+        if (extraction.cleanedContent) {
+          writeStreamContent(extraction.cleanedContent);
+          const textChunk = {
+            id: responseId,
+            object: 'chat.completion.chunk',
+            created,
+            model,
+            choices: [{ index: 0, delta: { role: 'assistant', content: extraction.cleanedContent }, finish_reason: null }],
+          };
+          res.write(`data: ${JSON.stringify(textChunk)}\n\n`);
+        }
+        const toolEvents = buildStreamingToolCallEvents(extraction.toolCalls, toolsConfig.useLegacyFunctions);
+        for (const ev of toolEvents) {
+          const tcChunk = {
+            id: responseId,
+            object: 'chat.completion.chunk',
+            created,
+            model,
+            choices: [{ index: 0, delta: ev.delta, finish_reason: ev.finish_reason }],
+          };
+          res.write(`data: ${JSON.stringify(tcChunk)}\n\n`);
+        }
+        anyChunkWritten = true;
+      } else if (fullAnswer) {
+        writeStreamContent(fullAnswer);
+        const textChunk = {
+          id: responseId,
+          object: 'chat.completion.chunk',
+          created,
+          model,
+          choices: [{ index: 0, delta: { role: 'assistant', content: fullAnswer }, finish_reason: 'stop' }],
+        };
+        res.write(`data: ${JSON.stringify(textChunk)}\n\n`);
+        anyChunkWritten = true;
+      }
+    };
 
     try {
       if (!reader) {
@@ -2397,6 +3387,7 @@ function createExpressStreamHandler(res) {
           }
           const data = trimmed.slice(5).trim();
           if (data === '[DONE]') {
+            flushToolAwareAnswer();
             res.write('data: [DONE]\n\n');
             doneWritten = true;
             continue;
@@ -2406,8 +3397,8 @@ function createExpressStreamHandler(res) {
             const parsed = JSON.parse(data);
             if (parsed?.error) {
               const upstreamError = typeof parsed.error === 'string' ? { message: parsed.error } : parsed.error;
-              const errorMsg = upstreamError.message || upstreamError.details || '请求失败';
-              // 内容安全警告作为正常输出而不是错误
+              const errorMsg = upstreamError.message || upstreamError.details || 'Request failed';
+              // Surface content safety warnings as normal assistant output instead of errors
               if (upstreamError.code === 'data_inspection_failed' || upstreamError.details) {
                 const warningChunk = {
                   id: responseId,
@@ -2437,7 +3428,33 @@ function createExpressStreamHandler(res) {
               continue;
             }
 
-            const delta = mapUpstreamDeltaToOpenAI(parsed?.choices?.[0]?.delta);
+            // Pass through pre-formatted OpenAI tool_calls chunks (from synthetic retry stream)
+            const rawDelta = parsed?.choices?.[0]?.delta;
+            if (rawDelta && (rawDelta.tool_calls || rawDelta.function_call)) {
+              res.write(`data: ${JSON.stringify(parsed)}\n\n`);
+              anyChunkWritten = true;
+              continue;
+            }
+
+            const delta = mapUpstreamDeltaToOpenAI(rawDelta);
+            if (hasActiveTools) {
+              if (delta?.reasoning_content) {
+                const rChunk = {
+                  id: responseId,
+                  object: 'chat.completion.chunk',
+                  created,
+                  model,
+                  choices: [{ index: 0, delta: { role: 'assistant', reasoning_content: delta.reasoning_content }, finish_reason: null }],
+                };
+                res.write(`data: ${JSON.stringify(rChunk)}\n\n`);
+                anyChunkWritten = true;
+              }
+              if (typeof delta?.content === 'string' && delta.content) {
+                answerBufferParts.push(delta.content);
+              }
+              continue;
+            }
+
             if (delta || parsed?.choices?.[0]?.finish_reason) {
               if (delta && typeof delta.content === 'string' && delta.content) {
                 writeStreamContent(delta.content);
@@ -2461,6 +3478,9 @@ function createExpressStreamHandler(res) {
       }
       if (buffer.trim() && !buffer.trimStart().startsWith('data:')) {
         nonDataBuffer += buffer;
+      }
+      if (!doneWritten && hasActiveTools && answerBufferParts.length > 0) {
+        flushToolAwareAnswer();
       }
       if (!doneWritten && !anyChunkWritten) {
         const err = tryParseUpstreamErrorPayload(nonDataBuffer);
@@ -2486,12 +3506,12 @@ function createExpressStreamHandler(res) {
 
     if (debugEnabled && hasStreamContent && typeof process !== 'undefined' && process.stdout) {
       process.stdout.write('\n');
-      console.log('[qwen2api][stream] 输出完毕');
+      console.log('[qwen2api][stream] Stream completed');
     }
   };
 }
 
-// 带日志事件（event: log）的流式写入器
+// Stream writer with log events (event: log)
 function createExpressLogStreamHandler(res) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -2523,7 +3543,7 @@ function createExpressLogStreamHandler(res) {
 }
 
 // ============================================
-// 导出
+// Exports
 // ============================================
 
 module.exports = {
@@ -2542,5 +3562,10 @@ module.exports = {
   tryParseUpstreamErrorPayload,
   createExpressStreamHandler,
   createExpressLogStreamHandler,
+  normalizeToolsConfig,
+  extractToolCallsFromText,
+  buildStreamingToolCallEvents,
+  parseIncomingMessages,
   uuidv4,
 };
+

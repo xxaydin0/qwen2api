@@ -1,12 +1,12 @@
 /**
- * Vercel Node.js 入口 - 复用 core.js（与本地 / Netlify 同一套逻辑）
+ * Vercel Node.js Entry Point - Reuses core.js (shares identical logic with Local / Netlify)
  *
- * 说明：
- * - 从 Edge Runtime 切换为 Node Runtime，因此可以直接 require CommonJS 的 core.js。
- * - stream=true 时通过 createExpressStreamHandler 实时转发上游 SSE（Vercel Node
- *   函数原生支持流式响应），与本地 Express 行为一致。
- * - 超时通过 module.exports.config.maxDuration 配置：Hobby 上限 60s，Pro 可更高。
- * - 无法运行 Chromium / yt-dlp，token 走简化获取方式。
+ * Notes:
+ * - Switched from Edge Runtime to Node Runtime so CommonJS core.js can be required directly.
+ * - When stream=true, upstream SSE is forwarded in real time via createExpressStreamHandler
+ *   (Vercel Node functions natively support streaming responses), matching local Express behavior.
+ * - Timeout is configured via module.exports.config.maxDuration: Hobby cap is 60s, Pro allows higher.
+ * - Cannot run Chromium / yt-dlp; tokens use the lightweight fallback path.
  */
 
 const {
@@ -120,8 +120,9 @@ module.exports = async function handler(req, res) {
   return res.status(404).json({ error: { message: 'Not found', type: 'invalid_request_error' } });
 };
 
-// Vercel 函数最大执行时长（秒）：
-// - Hobby 计划硬顶 60s（超出的配置会被钳制到 60）
-// - Pro 计划最高 300s，Enterprise 最高 800s
-// 附件上传（OSS PUT + 状态轮询）耗时较长，Pro 及以上请保持较大值。
+// Vercel function maximum execution duration (seconds):
+// - Hobby plan hard cap is 60s (higher values are clamped to 60)
+// - Pro plan up to 300s, Enterprise up to 800s
+// Attachment uploads (OSS PUT + status polling) take longer; keep a high value on Pro and above.
 module.exports.config = { maxDuration: 300 };
+

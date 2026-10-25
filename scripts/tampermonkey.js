@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         通用视频分析面板
+// @name         Universal Video Analysis Panel
 // @namespace    https://github.com/smanx/qwen2api
 // @version      1.3.0
-// @description  在常见视频播放详情页增加分析面板，支持流式输出与日志查看
+// @description  Adds a video analysis panel to common video watch pages with streaming output and log viewer
 // @author       hephaestus
 // @match        https://www.bilibili.com/video/*
 // @match        https://www.bilibili.com/list/watchlater/*
@@ -15,14 +15,14 @@
   'use strict';
 
   const STORAGE_KEY = 'tm_video_analysis_input';
-  const DEFAULT_PROMPT = '分析视频内容';
+  const DEFAULT_PROMPT = 'Analyze the video content';
   const SERVER_BASE_KEY = 'tm_video_analysis_server_base';
   const MODEL_KEY = 'tm_video_analysis_model';
   const RESOLUTION_KEY = 'tm_video_analysis_resolution';
   const LAUNCHER_POS_KEY = 'tm_video_analysis_launcher_pos';
   const DEFAULT_MODEL = 'qwen3.5-plus';
   const DEFAULT_RESOLUTION = 'default';
-  const DEFAULT_SERVER_BASE = 'http://localhost:8765';
+  const DEFAULT_SERVER_BASE = 'http://localhost:3000';
   const PANEL_ID = 'tm-video-analysis-panel';
   const LAUNCHER_ID = 'tm-video-analysis-launcher';
   const SCROLLBAR_STYLE_ID = 'tm-video-analysis-scrollbar-style';
@@ -113,12 +113,12 @@
     'display: none'
     ].join(';');
 
-    const title = create('div', { textContent: '视频分析' });
+    const title = create('div', { textContent: 'Video Analysis' });
     title.style.cssText = 'font-size:14px;font-weight:700;margin-bottom:8px;';
 
     const input = create('input');
     input.type = 'text';
-    input.placeholder = '请输入内容';
+    input.placeholder = 'Enter prompt';
     input.value = localStorage.getItem(STORAGE_KEY) || DEFAULT_PROMPT;
     input.style.cssText = [
     'width: 100%',
@@ -134,7 +134,7 @@
 
     const serverInput = create('input');
     serverInput.type = 'text';
-    serverInput.placeholder = '请输入服务基地址，如 http://localhost:8765';
+    serverInput.placeholder = 'Enter server base URL, e.g. http://localhost:3000';
     serverInput.value = localStorage.getItem(SERVER_BASE_KEY) || DEFAULT_SERVER_BASE;
     serverInput.style.cssText = [
       'width: 100%',
@@ -154,7 +154,7 @@
     const resolutionRow = create('div');
     resolutionRow.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:8px;';
 
-    const resolutionLabel = create('div', { textContent: '清晰度' });
+    const resolutionLabel = create('div', { textContent: 'Quality' });
     resolutionLabel.style.cssText = 'width:56px;color:rgba(255,255,255,.82);font-size:12px;';
 
     const resolutionSelect = create('select');
@@ -171,7 +171,7 @@
 
     const storedResolution = localStorage.getItem(RESOLUTION_KEY) || DEFAULT_RESOLUTION;
     const resolutionOptions = [
-      { value: 'default', label: '默认(按高度p)' },
+      { value: 'default', label: 'Default (by height p)' },
       { value: '360', label: '360p' },
       { value: '480', label: '480p' },
       { value: '720', label: '720p' }
@@ -198,7 +198,7 @@
     clearNode(modelSelect);
     modelSelect.appendChild(create('option', { value: storedModel, textContent: storedModel }));
 
-    const reloadModelsButton = create('button', { textContent: '刷新模型' });
+    const reloadModelsButton = create('button', { textContent: 'Refresh Models' });
     reloadModelsButton.style.cssText = [
       'border: 0',
       'border-radius: 6px',
@@ -209,7 +209,7 @@
       'white-space: nowrap'
     ].join(';');
 
-    const button = create('button', { textContent: '开始分析' });
+    const button = create('button', { textContent: 'Start Analysis' });
     button.style.cssText = [
     'width: 100%',
     'border: 0',
@@ -222,7 +222,7 @@
     'margin-bottom: 10px'
     ].join(';');
 
-    const toggleLogsButton = create('button', { textContent: '展开日志' });
+    const toggleLogsButton = create('button', { textContent: 'Expand Logs' });
     toggleLogsButton.style.cssText = [
       'width: 100%',
       'border: 0',
@@ -242,10 +242,10 @@
     const statusHeader = create('div');
     statusHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;';
 
-    const statusTitle = create('div', { textContent: '分析过程（流式）' });
+    const statusTitle = create('div', { textContent: 'Analysis Progress (Streaming)' });
     statusTitle.style.cssText = 'font-weight:600;';
 
-    const clearLogsButton = create('button', { textContent: '清空日志' });
+    const clearLogsButton = create('button', { textContent: 'Clear Logs' });
     clearLogsButton.style.cssText = [
       'border: 0',
       'border-radius: 6px',
@@ -270,13 +270,13 @@
     'margin-bottom: 10px'
     ].join(';');
 
-    const outputTitle = create('div', { textContent: '分析结果' });
+    const outputTitle = create('div', { textContent: 'Analysis Result' });
     outputTitle.style.cssText = 'font-weight:600;margin-bottom:6px;';
 
     const output = create('textarea');
     output.dataset.scrollable = 'true';
     output.readOnly = true;
-    output.placeholder = '这里会显示视频分析结果';
+    output.placeholder = 'Video analysis results will appear here';
     output.style.cssText = [
     'width: 100%',
     'height: 120px',
@@ -289,14 +289,14 @@
     'color: #fff'
     ].join(';');
 
-    const videoSizeInfo = create('div', { textContent: '视频大小: -' });
+    const videoSizeInfo = create('div', { textContent: 'Video Size: -' });
     videoSizeInfo.style.cssText = 'margin:8px 0 0;color:#a7d8ff;font-size:12px;line-height:1.5;text-align:center;';
     let activeAbortController = null;
     let lastVideoSizeText = '';
 
     function setVideoSizeInfo(sizeText) {
       const text = (sizeText || '').trim();
-      videoSizeInfo.textContent = `视频大小: ${text || '-'}`;
+      videoSizeInfo.textContent = `Video Size: ${text || '-'}`;
     }
 
     function appendStatus(text) {
@@ -312,7 +312,7 @@
 
     function setLogsExpanded(expanded) {
       logSection.style.display = expanded ? 'block' : 'none';
-      toggleLogsButton.textContent = expanded ? '收起日志' : '展开日志';
+      toggleLogsButton.textContent = expanded ? 'Collapse Logs' : 'Expand Logs';
       if (!expanded) {
         statusList.style.height = '180px';
         return;
@@ -408,7 +408,7 @@
               const sizeText = parsedLog?.sizeMB || parsedLog?.size || '';
               const normalizedSize = String(sizeText || '').trim();
               if (normalizedSize && normalizedSize !== lastVideoSizeText) {
-                appendStatus(`[video] 下载完成，大小: ${sizeText}`);
+                appendStatus(`[video] Download finished, size: ${sizeText}`);
                 setVideoSizeInfo(normalizedSize);
                 lastVideoSizeText = normalizedSize;
               }
@@ -417,7 +417,7 @@
               const sizeText = parsedLog?.sizeMB || parsedLog?.size || '';
               const normalizedSize = String(sizeText || '').trim();
               if (normalizedSize && normalizedSize !== lastVideoSizeText) {
-                appendStatus(`[video] 上传前文件大小: ${sizeText}`);
+                appendStatus(`[video] File size before upload: ${sizeText}`);
                 setVideoSizeInfo(normalizedSize);
                 lastVideoSizeText = normalizedSize;
               }
@@ -428,7 +428,7 @@
 
         if (payload === '[DONE]') {
           reachedDone = true;
-          appendStatus('收到 [DONE]');
+          appendStatus('Received [DONE]');
           return;
         }
 
@@ -437,7 +437,7 @@
         try {
           const parsed = JSON.parse(payload);
           if (parsed?.error) {
-            apiError = String(parsed?.error?.message || '请求失败');
+            apiError = String(parsed?.error?.message || 'Request failed');
             appendStatus(`[error] ${apiError}`);
             return;
           }
@@ -540,8 +540,8 @@
       const modelsUrl = `${normalizedBase}/v1/models`;
 
       reloadModelsButton.disabled = true;
-      reloadModelsButton.textContent = '加载中...';
-      appendStatus(`拉取模型列表: ${modelsUrl}`);
+      reloadModelsButton.textContent = 'Loading...';
+      appendStatus(`Fetching model list: ${modelsUrl}`);
 
       try {
         const resp = await fetch(modelsUrl, {
@@ -551,7 +551,7 @@
 
         if (!resp.ok) {
           const errText = await resp.text();
-          appendStatus(`模型列表请求失败: ${resp.status} ${errText || resp.statusText}`);
+          appendStatus(`Model list request failed: ${resp.status} ${errText || resp.statusText}`);
           return;
         }
 
@@ -571,18 +571,18 @@
         }
 
         if (modelIds.length === 0) {
-          appendStatus('模型列表为空，保留当前模型');
+          appendStatus('Model list is empty, keeping current model');
           return;
         }
 
         setModelOptions(modelIds);
-        appendStatus(`模型加载完成，共 ${modelIds.length} 个`);
+        appendStatus(`Loaded ${modelIds.length} models`);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        appendStatus(`加载模型异常: ${msg}`);
+        appendStatus(`Model loading error: ${msg}`);
       } finally {
         reloadModelsButton.disabled = false;
-        reloadModelsButton.textContent = '刷新模型';
+        reloadModelsButton.textContent = 'Refresh Models';
       }
     }
 
@@ -603,17 +603,17 @@
       setVideoSizeInfo('');
       lastVideoSizeText = '';
 
-      appendStatus('准备请求 /v1/chat/completions/log ...');
-      appendStatus(`输入内容: ${userText || '(空)'}`);
-      appendStatus(`服务地址: ${normalizedBase}`);
-      appendStatus(`模型: ${selectedModel}`);
-      appendStatus(`下载清晰度(按高度): ${selectedResolution === 'default' ? '默认(按高度p)' : `${selectedResolution}p`}`);
-      appendStatus(`视频链接: ${location.href}`);
+      appendStatus('Preparing request to /v1/chat/completions/log ...');
+      appendStatus(`Prompt: ${userText || '(empty)'}`);
+      appendStatus(`Server Base: ${normalizedBase}`);
+      appendStatus(`Model: ${selectedModel}`);
+      appendStatus(`Download Resolution (by height): ${selectedResolution === 'default' ? 'Default (by height p)' : `${selectedResolution}p`}`);
+      appendStatus(`Video URL: ${location.href}`);
 
       const controller = new AbortController();
       activeAbortController = controller;
       button.disabled = false;
-      button.textContent = '中断请求';
+      button.textContent = 'Abort Request';
 
       try {
         const response = await fetch(requestUrl, {
@@ -641,20 +641,20 @@
 
         if (!response.ok) {
           const errText = await response.text();
-          appendStatus(`请求失败: ${errText || response.statusText}`);
-          output.value = `请求失败: ${response.status} ${response.statusText}`;
+          appendStatus(`Request failed: ${errText || response.statusText}`);
+          output.value = `Request failed: ${response.status} ${response.statusText}`;
           return;
         }
 
         if (!response.body) {
           const text = await response.text();
-          appendStatus('响应不是流，按文本处理');
+          appendStatus('Response is not a stream, handling as text');
           appendStatus(text);
           try {
             const parsed = text ? JSON.parse(text) : null;
-            output.value = (extractAssistantText(parsed) || text || '（空响应）').trim();
+            output.value = (extractAssistantText(parsed) || text || '(empty response)').trim();
           } catch {
-            output.value = text || '（空响应）';
+            output.value = text || '(empty response)';
           }
           return;
         }
@@ -663,13 +663,13 @@
         const isEventStream = contentType.includes('text/event-stream');
         if (!isEventStream) {
           const text = await response.text();
-          appendStatus('响应不是 SSE，按普通返回处理');
+          appendStatus('Response is not SSE, handling as standard payload');
           appendStatus(text);
           try {
             const parsed = text ? JSON.parse(text) : null;
-            output.value = (extractAssistantText(parsed) || text || '（空响应）').trim();
+            output.value = (extractAssistantText(parsed) || text || '(empty response)').trim();
           } catch {
-            output.value = text || '（空响应）';
+            output.value = text || '(empty response)';
           }
           return;
         }
@@ -703,26 +703,26 @@
         }
 
         if (streamError) {
-          output.value = `异常: ${streamError}`;
-          appendStatus(`异常: ${streamError}`);
+          output.value = `Error: ${streamError}`;
+          appendStatus(`Error: ${streamError}`);
           return;
         }
 
-        output.value = outRef.value || '（空响应）';
-        appendStatus('流结束，已输出最终消息');
+        output.value = outRef.value || '(empty response)';
+        appendStatus('Stream completed, final message rendered');
       } catch (error) {
         if (error && error.name === 'AbortError') {
-          appendStatus('请求已手动中断');
-          output.value = '请求已中断';
+          appendStatus('Request aborted manually');
+          output.value = 'Request aborted';
           return;
         }
         const msg = error instanceof Error ? error.message : String(error);
-        appendStatus(`异常: ${msg}`);
-        output.value = `异常: ${msg}`;
+        appendStatus(`Error: ${msg}`);
+        output.value = `Error: ${msg}`;
       } finally {
         activeAbortController = null;
         button.disabled = false;
-        button.textContent = '开始分析';
+        button.textContent = 'Start Analysis';
       }
     }
 
@@ -735,7 +735,7 @@
     });
     clearLogsButton.addEventListener('click', () => {
       clearStatus();
-      appendStatus('日志已清空');
+      appendStatus('Logs cleared');
     });
     toggleLogsButton.addEventListener('click', () => {
       const expanded = logSection.style.display !== 'none';
@@ -772,8 +772,8 @@
   function buildLauncher() {
     const launcher = create('button', { id: LAUNCHER_ID });
     launcher.type = 'button';
-    launcher.title = '视频分析';
-    launcher.setAttribute('aria-label', '视频分析');
+    launcher.title = 'Video Analysis';
+    launcher.setAttribute('aria-label', 'Video Analysis');
     launcher.style.cssText = [
       'position: fixed',
       'right: 16px',
@@ -962,8 +962,8 @@
     if (expanded) {
       syncPanelToLauncher(launcher, panel);
     }
-    launcher.title = expanded ? '收起视频分析' : '展开视频分析';
-    launcher.setAttribute('aria-label', expanded ? '收起视频分析' : '展开视频分析');
+    launcher.title = expanded ? 'Collapse Video Analysis' : 'Expand Video Analysis';
+    launcher.setAttribute('aria-label', expanded ? 'Collapse Video Analysis' : 'Expand Video Analysis');
   }
 
   function mountPanel() {

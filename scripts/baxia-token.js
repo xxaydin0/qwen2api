@@ -1,8 +1,8 @@
 /**
- * 用系统 Chrome 无头模式运行 baxia SDK，获取真实的 bx-ua / bx-umidtoken。
- * 启动 Chrome headless + CDP，加载 chat.qwen.ai，
- * 等待 window.__baxia__.getFYModule 就绪，调用 getUidToken() / getFYToken()。
- * 结果缓存复用。
+ * Run the baxia SDK in headless system Chrome to obtain genuine bx-ua / bx-umidtoken tokens.
+ * Launches headless Chrome with CDP, loads chat.qwen.ai,
+ * waits for window.__baxia__.getFYModule to initialize, and invokes getUidToken() / getFYToken().
+ * Results are cached and reused.
  */
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -27,7 +27,7 @@ const CHROME_CANDIDATES = [
   '/usr/bin/chromium',
   '/usr/bin/chromium-browser',
   '/usr/bin/microsoft-edge',
-  // 常见 Snap 安装位置
+  // Common Snap installation paths
   '/snap/bin/chromium',
   '/snap/bin/google-chrome',
 ].filter(Boolean);
@@ -36,7 +36,7 @@ function findChrome() {
   for (const p of CHROME_CANDIDATES) {
     if (p && fs.existsSync(p)) return p;
   }
-  // 兜底：从 PATH 里找（跨平台通用）
+  // Fallback: search PATH (cross-platform)
   try {
     const pathEnv = process.env.PATH || '';
     const exts = process.platform === 'win32'
@@ -53,7 +53,7 @@ function findChrome() {
   return null;
 }
 
-const CACHE_TTL = 25 * 60 * 1000; // 25 分钟
+const CACHE_TTL = 25 * 60 * 1000; // 25 minutes
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
 let cache = null;
 let cacheTime = 0;
